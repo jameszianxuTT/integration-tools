@@ -2,7 +2,9 @@
 
 ## Overview
 
-TODO: Document the uplift_history.py show tool.
+The uplift history script provides an unrolled uplift tree visualization.
+
+![](../.assets/uplift-tree.png)
 
 ## Usage
 

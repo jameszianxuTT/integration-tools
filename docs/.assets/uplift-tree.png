@@ -1,0 +1,672 @@
+<!DOCTYPE html><html lang="en-US" class="" data-primer data-cdn="https://a.slack-edge.com/"><head><script>
+
+(function () {
+	
+	var data;
+
+	const MAX_CDN_FALLBACK = 2;
+	let isReloading = false;
+
+	function scanPageAssets() {
+		var css = document.getElementsByTagName('link');
+		var script = document.getElementsByTagName('script');
+		var i;
+		var j;
+
+		
+		var cdn_domain = 'slack-edge.com';
+
+		
+		var domains = location.hostname && location.hostname.split('.');
+
+		const isDev =
+			(domains && domains.length && domains[0] && domains[0].match(/dev[0-9]+/i)) ||
+			(domains[1] && domains[1].match(/dev[0-9]+/i));
+
+		
+		if (isDev) {
+			cdn_domain = location.hostname;
+		}
+
+		for (i = 0, j = css.length; i < j; i += 1) {
+			if (
+				css[i].rel === 'stylesheet' &&
+				css[i].href &&
+				(!cdn_domain || css[i].href.indexOf(cdn_domain) !== -1)
+			)
+				count(css[i]);
+		}
+
+		for (i = 0, j = script.length; i < j; i += 1) {
+			if (script[i].src && (!cdn_domain || script[i].src.indexOf(cdn_domain) !== -1))
+				count(script[i]);
+		}
+
+		
+		check();
+	}
+
+	function reset() {
+		data = {
+			node_count: 0,
+			known_nodes: [],
+			processed_nodes: [],
+			processed_count: 0,
+			loaded: [],
+			failed: [],
+		};
+	}
+
+	function isRelevantNode(node) {
+		if (!node) return;
+		
+		if (!node.onload || !node.onerror) return false;
+		
+		if (node.href && node.rel && node.rel === 'stylesheet') return true;
+		
+		if (node.src && node.nodeName.toLowerCase() === 'script') return true;
+		
+		return false;
+	}
+
+	function getURL(node) {
+		if (!node) return;
+		
+		return node.href || node.src;
+	}
+
+	function process(node) {
+		var src = getURL(node);
+		if (!src) return;
+		
+		if (data.processed_nodes[src]) return;
+		data.processed_nodes[src] = true;
+		return true;
+	}
+
+	function ok(node, args) {
+		if (!process(node)) return;
+		data.processed_count += 1;
+		data.loaded.push({
+			node: node,
+			args: args,
+		});
+		check();
+	}
+
+	function failed(node, args) {
+		if (!process(node)) return;
+		data.processed_count += 1;
+		data.failed.push({
+			node: node,
+			args: args,
+		});
+		
+		(
+			(window.TS && TS.console && TS.console.error && TS.console.error) ||
+			window.console.error ||
+			function () {}
+		)('CDN asset failed to load: ' + getURL(node));
+		check();
+	}
+
+	function count(node) {
+		if (!node) return;
+		if (!isRelevantNode(node)) return;
+		var url = getURL(node);
+		if (!url) return;
+		if (data.known_nodes[url]) return;
+		data.known_nodes[url] = true;
+		data.node_count += 1;
+	}
+
+	function check() {
+		if (!data.processed_count) return;
+		var missing = false;
+		var missing_nodes = [];
+		var all_count = 0;
+		for (var item in data.known_nodes) {
+			if (!data.known_nodes.hasOwnProperty(item)) continue;
+			all_count += 1;
+			if (!data.processed_nodes[item]) {
+				missing_nodes.push(item);
+				missing = true;
+			}
+		}
+
+		
+		if (!all_count) return;
+
+		
+		if (missing) return;
+
+		
+		if (!data.failed.length) {
+			if (window.console) console.log(data.loaded.length + ' CDN assets loaded OK');
+			reset();
+			return;
+		}
+
+		
+		var i;
+		var j = data.failed.length;
+		var failed = [];
+		var failed_css = 0;
+		var failed_js = 0;
+		var node_name;
+
+		for (i = 0; i < j; i += 1) {
+			failed.push(getURL(data.failed[i].node));
+			node_name = data.failed[i].node.nodeName.toLowerCase();
+			if (node_name === 'link') failed_css += 1;
+			if (node_name === 'script') failed_js += 1;
+		}
+
+		if (window.console && console.error) {
+			console.error(data.failed.length + ' CDN assets failed to load: ' + failed.join(', '));
+		}
+
+		if (window.TSBeacon) {
+			if (failed_css) window.TSBeacon('cdn_load_tracking_failed_css', failed_css);
+			if (failed_js) window.TSBeacon('cdn_load_tracking_failed_js', failed_js);
+		}
+
+		if (isReloading) {
+			if (window.console) {
+				console.warn(
+					'[RELOAD] Detected more issues loading assets, but we are already preparing to reload so no need to do anything',
+				);
+			}
+			return;
+		}
+
+		const params = new URLSearchParams(location.search);
+		let cdnFallbackCount = parseInt(params.get('cdn_fallback'), 10) || 0;
+		cdnFallbackCount += 1;
+
+		if (cdnFallbackCount > MAX_CDN_FALLBACK) {
+			if (window.console) {
+				console.warn("[RELOAD] Hit maximum reload attempts, won't try reloading anymore");
+			}
+			return;
+		}
+
+		isReloading = true;
+		params.set('cdn_fallback', cdnFallbackCount.toString());
+
+		
+		const newSearch = params.toString();
+		if (window.console) console.warn(`[RELOAD] Reloading client with URL: ${newSearch}`);
+
+		
+		let timeout;
+		const reload = () => {
+			console.warn(`[RELOAD] Reloading client with URL: ${newSearch}`);
+			window.clearTimeout(timeout);
+			window.location.search = newSearch;
+		};
+		timeout = window.setTimeout(reload.bind(this), 5000);
+
+		const preReloadPromises = [];
+
+		
+		
+		
+		
+		if (window.desktop?.stats?.clearCache) {
+			preReloadPromises.push(
+				new Promise((resolve) => {
+					try {
+						console.warn('[RELOAD] Attempting to clear desktop cache');
+						window.desktop.stats.clearCache().then(() => {
+							console.warn('[RELOAD] Successfully cleared desktop cache');
+							resolve();
+						});
+					} catch (e) {
+						console.warn(
+							`[RELOAD] Error clearing desktop cache: ${!!e && typeof e === 'object' && 'message' in e ? e.message : 'Unknown error'}`,
+						);
+						resolve();
+					}
+				}),
+			);
+		}
+
+		Promise.all(preReloadPromises).then(reload);
+	}
+
+	reset();
+
+	window._cdn = {
+		check: check,
+		count: count,
+		data: data,
+		ok: ok,
+		failed: failed,
+		scanPageAssets: scanPageAssets,
+	};
+})();
+</script><link href="https://a.slack-edge.com/bv1-13/marketing-style-onetrust-banner.80ccb99235027e6690e3.min.css" rel="stylesheet" type="text/css" onload="window._cdn ? _cdn.ok(this, arguments) : null" onerror="window._cdn ? _cdn.failed(this, arguments) : null" crossorigin="anonymous"><link href="https://a.slack-edge.com/bv1-13/legacy-style-browser-support.7e71ed8934ac34c9a02e.min.css" rel="stylesheet" type="text/css" onload="window._cdn ? _cdn.ok(this, arguments) : null" onerror="window._cdn ? _cdn.failed(this, arguments) : null" crossorigin="anonymous"><link href="https://a.slack-edge.com/bv1-13/marketing-style-footer.b8665cfb462968f62573.min.css" rel="stylesheet" type="text/css" onload="window._cdn ? _cdn.ok(this, arguments) : null" onerror="window._cdn ? _cdn.failed(this, arguments) : null" crossorigin="anonymous"><link href="https://a.slack-edge.com/bv1-13/legacy-style-libs-lato-2-compressed.b4a5b5cd94ce5aee6359.min.css" rel="stylesheet" type="text/css" onload="window._cdn ? _cdn.ok(this, arguments) : null" onerror="window._cdn ? _cdn.failed(this, arguments) : null" crossorigin="anonymous"><link href="https://a.slack-edge.com/bv1-13/marketing-style-generic-typography-avantgarde.e5bf1218673e1b980835.min.css" rel="stylesheet" type="text/css" onload="window._cdn ? _cdn.ok(this, arguments) : null" onerror="window._cdn ? _cdn.failed(this, arguments) : null" crossorigin="anonymous"><link href="https://a.slack-edge.com/bv1-13/marketing-style-generic-typography-sfsans.663a8f35624c9f33608d.min.css" rel="stylesheet" type="text/css" onload="window._cdn ? _cdn.ok(this, arguments) : null" onerror="window._cdn ? _cdn.failed(this, arguments) : null" crossorigin="anonymous"><link rel="canonical" href="https://slack.com">
+
+<link rel="alternate" hreflang="en-us" href="https://slack.com">
+
+<link rel="alternate" hreflang="en-au" href="https://slack.com/intl/en-au">
+
+<link rel="alternate" hreflang="en-gb" href="https://slack.com/intl/en-gb">
+
+<link rel="alternate" hreflang="en-in" href="https://slack.com/intl/en-in">
+
+<link rel="alternate" hreflang="fr-ca" href="https://slack.com/intl/fr-ca">
+
+<link rel="alternate" hreflang="fr-fr" href="https://slack.com/intl/fr-fr">
+
+<link rel="alternate" hreflang="de-de" href="https://slack.com/intl/de-de">
+
+<link rel="alternate" hreflang="es-es" href="https://slack.com/intl/es-es">
+
+<link rel="alternate" hreflang="es" href="https://slack.com/intl/es-la">
+
+<link rel="alternate" hreflang="ja-jp" href="https://slack.com/intl/ja-jp">
+
+<link rel="alternate" hreflang="pt-br" href="https://slack.com/intl/pt-br">
+
+<link rel="alternate" hreflang="ko-kr" href="https://slack.com/intl/ko-kr">
+
+<link rel="alternate" hreflang="it-it" href="https://slack.com/intl/it-it">
+
+<link rel="alternate" hreflang="zh-cn" href="https://slack.com/intl/zh-cn">
+
+<link rel="alternate" hreflang="zh-tw" href="https://slack.com/intl/zh-tw">
+
+<link rel="alternate" hreflang="x-default" href="https://slack.com">
+
+<script>window.ts_endpoint_url = "https:\/\/slack.com\/beacon\/timing";(function(e) {
+	var n=Date.now?Date.now():+new Date,r=e.performance||{},t=[],a={},i=function(e,n){for(var r=0,a=t.length,i=[];a>r;r++)t[r][e]==n&&i.push(t[r]);return i},o=function(e,n){for(var r,a=t.length;a--;)r=t[a],r.entryType!=e||void 0!==n&&r.name!=n||t.splice(a,1)};r.now||(r.now=r.webkitNow||r.mozNow||r.msNow||function(){return(Date.now?Date.now():+new Date)-n}),r.mark||(r.mark=r.webkitMark||function(e){var n={name:e,entryType:"mark",startTime:r.now(),duration:0};t.push(n),a[e]=n}),r.measure||(r.measure=r.webkitMeasure||function(e,n,r){n=a[n].startTime,r=a[r].startTime,t.push({name:e,entryType:"measure",startTime:n,duration:r-n})}),r.getEntriesByType||(r.getEntriesByType=r.webkitGetEntriesByType||function(e){return i("entryType",e)}),r.getEntriesByName||(r.getEntriesByName=r.webkitGetEntriesByName||function(e){return i("name",e)}),r.clearMarks||(r.clearMarks=r.webkitClearMarks||function(e){o("mark",e)}),r.clearMeasures||(r.clearMeasures=r.webkitClearMeasures||function(e){o("measure",e)}),e.performance=r,"function"==typeof define&&(define.amd||define.ajs)&&define("performance",[],function(){return r}) // eslint-disable-line
+})(window);</script><script>
+
+(function () {
+	
+	window.TSMark = function (mark_label) {
+		if (!window.performance || !window.performance.mark) return;
+		performance.mark(mark_label);
+	};
+	window.TSMark('start_load');
+
+	
+	window.TSMeasureAndBeacon = function (measure_label, start_mark_label) {
+		if (!window.performance || !window.performance.mark || !window.performance.measure) {
+			return;
+		}
+
+		performance.mark(start_mark_label + '_end');
+
+		try {
+			performance.measure(measure_label, start_mark_label, start_mark_label + '_end');
+			window.TSBeacon(measure_label, performance.getEntriesByName(measure_label)[0].duration);
+		} catch (e) {
+			
+		}
+	};
+
+	
+	if ('sendBeacon' in navigator) {
+		window.TSBeacon = function (label, value) {
+			var endpoint_url = window.ts_endpoint_url || 'https://slack.com/beacon/timing';
+			navigator.sendBeacon(
+				endpoint_url + '?data=' + encodeURIComponent(label + ':' + value),
+				'',
+			);
+		};
+	} else {
+		window.TSBeacon = function (label, value) {
+			var endpoint_url = window.ts_endpoint_url || 'https://slack.com/beacon/timing';
+			new Image().src = endpoint_url + '?data=' + encodeURIComponent(label + ':' + value);
+		};
+	}
+})();
+</script><script>window.TSMark('step_load');</script><script>
+(function () {
+	function throttle(callback, intervalMs) {
+		var wait = false;
+
+		return function () {
+			if (!wait) {
+				callback.apply(null, arguments);
+				wait = true;
+				setTimeout(function () {
+					wait = false;
+				}, intervalMs);
+			}
+		};
+	}
+
+	function getGenericLogger() {
+		return {
+			warn: (msg) => {
+				
+				if (window.console && console.warn) return console.warn(msg);
+			},
+			error: (msg) => {
+				if (!msg) return;
+
+				if (window.TSBeacon) return window.TSBeacon(msg, 1);
+
+				
+				if (window.console && console.warn) return console.warn(msg);
+			},
+		};
+	}
+
+	function globalErrorHandler(evt) {
+		if (!evt) return;
+
+		
+		var details = '';
+
+		var node = evt.srcElement || evt.target;
+
+		var genericLogger = getGenericLogger();
+
+		
+		
+		
+		
+		if (node && node.nodeName) {
+			var nodeSrc = '';
+			if (node.nodeName === 'SCRIPT') {
+				nodeSrc = node.src || 'unknown';
+				var errorType = evt.type || 'error';
+
+				
+				details = `[${errorType}] from script at ${nodeSrc} (failed to load?)`;
+			} else if (node.nodeName === 'IMG') {
+				nodeSrc = node.src || node.currentSrc;
+
+				genericLogger.warn(`<img> fired error with url = ${nodeSrc}`);
+				return;
+			}
+		}
+
+		
+		if (evt.error && evt.error.stack) {
+			details += ` ${evt.error.stack}`;
+		}
+
+		if (evt.filename) {
+			
+			var fileName = evt.filename;
+			var lineNo = evt.lineno;
+			var colNo = evt.colno;
+
+			details += ` from ${fileName}`;
+
+			
+			if (lineNo) {
+				details += ` @ line ${lineNo}, col ${colNo}`;
+			}
+		}
+
+		var msg;
+
+		
+		if (evt.error && evt.error.stack) {
+			
+			msg = details;
+		} else {
+			
+			msg = `${evt.message || ''} ${details}`;
+		}
+
+		
+		if (msg && msg.replace) msg = msg.replace(/\s+/g, ' ').trim();
+
+		if (!msg || !msg.length) {
+			if (node) {
+				var nodeName = node.nodeName || 'unknown';
+
+				
+				
+				
+				if (nodeName === 'VIDEO') {
+					return;
+				}
+
+				msg = `error event from node of ${nodeName}, no message provided?`;
+			} else {
+				msg = 'error event fired, no relevant message or node found';
+			}
+		}
+
+		var logPrefix = 'ERROR caught in js/inline/register_global_error_handler';
+
+		msg = `${logPrefix} - ${msg}`;
+
+		genericLogger.error(msg);
+	}
+
+	
+	
+	
+	var capture = true;
+
+	
+	var throttledHandler = throttle(globalErrorHandler, 10000);
+
+	window.addEventListener('error', throttledHandler, capture);
+})();
+</script><script type="text/javascript" crossorigin="anonymous" src="https://a.slack-edge.com/bv1-13/manifest.5730f273bef9fb3a3e12.primer.min.js" onload="window._cdn ? _cdn.ok(this, arguments) : null" onerror="window._cdn ? _cdn.failed(this, arguments) : null"></script><noscript><meta http-equiv="refresh" content="0; URL=/?redir=%2Ffiles-pri%2FT08AYGP54BT-F09BQLZ9N5Q%2Fimage.png&amp;nojsmode=1"></noscript><script type="text/javascript">var safe_hosts = ['app.optimizely.com', 'tinyspeck.dev.slack.com'];
+
+if (self !== top && safe_hosts.indexOf(top.location.host) === -1) {
+	window.document.write(
+		'\u003Cstyle>body * {display:none !important;}\u003C/style>\u003Ca href="#" onclick=' +
+			'"top.location.href=window.location.href" style="display:block !important;padding:10px">Go to Slack.com\u003C/a>'
+	);
+}
+
+(function() {
+	var timer;
+	if (self !== top && safe_hosts.indexOf(top.location.host) === -1) {
+		timer = window.setInterval(function() {
+			if (window) {
+				try {
+					var pageEl = document.getElementById('page');
+					var clientEl = document.getElementById('client-ui');
+					var sectionEls = document.querySelectorAll('nav, header, section');
+
+					pageEl.parentNode.removeChild(pageEl);
+					clientEl.parentNode.removeChild(clientEl);
+					for (var i = 0; i < sectionEls.length; i++) {
+						sectionEls[i].parentNode.removeChild(sectionEls[i]);
+					}
+					window.TS = null;
+					window.TD = null;
+					window.clearInterval(timer);
+				} catch (e) {}
+			}
+		}, 200);
+	}
+})();</script><meta name="facebook-domain-verification" content="chiwsajpoybn2cnqyj9w8mvrey56m0"><script type="text/javascript">
+window.dataLayer = window.dataLayer || [];
+function gtag(){window.dataLayer.push(arguments);}
+
+gtag('consent', "default", {"ad_storage":"denied","ad_user_data":"denied","ad_personalization":"denied","personalization_storage":"denied","analytics_storage":"denied","functionality_storage":"denied","security_storage":"denied","wait_for_update":1000});
+
+function loadGTM() {
+	window.dataLayer.push({
+		'gtm.start': Date.now(),
+		'event': 'gtm.js',
+		'AnalyticsActiveGroups': ",1,2,",
+		'policy_ga_only': true,
+	});
+	var firstScript = document.getElementsByTagName('script')[0];
+	var thisScript = document.createElement('script');
+	thisScript.async = true;
+	thisScript.src = '//www.googletagmanager.com/gtm.js?id=GTM-KH2LPK';
+	firstScript.parentNode.insertBefore(thisScript, firstScript);
+}
+
+
+</script><script type="text/javascript">
+document.addEventListener("DOMContentLoaded", function(e) {
+	var gtmDataLayer = window.dataLayer || [];
+	var gtmTags = document.querySelectorAll('*[data-gtm-click]');
+	var gtmClickHandler = function(c) {
+		var gtm_events = this.getAttribute('data-gtm-click');
+		if (!gtm_events) return;
+		var gtm_events_arr = gtm_events.split(",");
+		for(var e=0; e < gtm_events_arr.length; e++) {
+			var ev = gtm_events_arr[e].trim();
+			gtmDataLayer.push({ 'event': ev });
+		}
+	};
+	for(var g=0; g < gtmTags.length; g++){
+		var elem = gtmTags[g];
+		elem.addEventListener('click', gtmClickHandler);
+	}
+});
+</script><script type="text/javascript">
+(function(e,c,b,f,d,g,a){e.SlackBeaconObject=d;
+e[d]=e[d]||function(){(e[d].q=e[d].q||[]).push([1*new Date(),arguments])};
+e[d].l=1*new Date();g=c.createElement(b);a=c.getElementsByTagName(b)[0];
+g.async=1;g.src=f;a.parentNode.insertBefore(g,a)
+})(window,document,"script","https://a.slack-edge.com/bv1-13/slack_beacon.10d18d9f8a63b0cd84b0.min.js","sb");
+window.sb('set', 'token', '3307f436963e02d4f9eb85ce5159744c');
+window.sb('track', 'pageview');
+</script><script src="https://cdn.cookielaw.org/scripttemplates/otSDKStub.js" data-document-language="true" data-domain-script="3bcd90cf-1e32-46d7-adbd-634f66b65b7d"></script><script>window.OneTrustLoaded = true;</script><script>
+window.dataLayer = window.dataLayer || [];
+
+function afterConsentScripts() {
+	window.TD.analytics.doPush();
+
+	const bottomBannerEl = document.querySelector('.c-announcement-banner-bottom');
+	if (bottomBannerEl !== null) {
+		bottomBannerEl.classList.remove('c-announcement-banner-bottom-invisible');
+	}
+}
+
+
+
+let initOneTrustReady = false;
+let intOneTrustLoaded = false;
+function OptanonWrapper() {
+	gtag('consent', "update", {"ad_storage":"denied","ad_user_data":"denied","ad_personalization":"denied","personalization_storage":"denied","analytics_storage":"denied","functionality_storage":"denied","security_storage":"denied"});
+	if (!intOneTrustLoaded) {
+		document.dispatchEvent(new CustomEvent('OneTrustLoaded'));
+		intOneTrustLoaded = true;
+	}
+	window.dataLayer.push({'event': 'OneTrustReady'});
+	if (!initOneTrustReady) {
+		document.dispatchEvent(new CustomEvent('OneTrustReady'));
+		loadGTM();
+		initOneTrustReady = true;
+	}
+
+	if (!Optanon.GetDomainData().ShowAlertNotice || false) {
+		afterConsentScripts();
+	} else {
+		document.querySelector('#onetrust-accept-btn-handler').focus()
+	}
+	Optanon.OnConsentChanged(function() {
+		afterConsentScripts();
+	});
+
+}</script><script type="text/javascript">var TS_last_log_date = null;
+var TSMakeLogDate = function() {
+	var date = new Date();
+
+	var y = date.getFullYear();
+	var mo = date.getMonth()+1;
+	var d = date.getDate();
+
+	var time = {
+	  h: date.getHours(),
+	  mi: date.getMinutes(),
+	  s: date.getSeconds(),
+	  ms: date.getMilliseconds()
+	};
+
+	Object.keys(time).map(function(moment, index) {
+		if (moment == 'ms') {
+			if (time[moment] < 10) {
+				time[moment] = time[moment]+'00';
+			} else if (time[moment] < 100) {
+				time[moment] = time[moment]+'0';
+			}
+		} else if (time[moment] < 10) {
+			time[moment] = '0' + time[moment];
+		}
+	});
+
+	var str = y + '/' + mo + '/' + d + ' ' + time.h + ':' + time.mi + ':' + time.s + '.' + time.ms;
+	if (TS_last_log_date) {
+		var diff = date-TS_last_log_date;
+		//str+= ' ('+diff+'ms)';
+	}
+	TS_last_log_date = date;
+	return str+' ';
+}
+
+var parseDeepLinkRequest = function(code) {
+	var m = code.match(/"id":"([CDG][A-Z0-9]{8,})"/);
+	var id = m ? m[1] : null;
+
+	m = code.match(/"team":"(T[A-Z0-9]{8,})"/);
+	var team = m ? m[1] : null;
+
+	m = code.match(/"message":"([0-9]+\.[0-9]+)"/);
+	var message = m ? m[1] : null;
+
+	return { id: id, team: team, message: message };
+}
+
+if ('rendererEvalAsync' in window) {
+	var origRendererEvalAsync = window.rendererEvalAsync;
+	window.rendererEvalAsync = function(blob) {
+		try {
+			var data = JSON.parse(decodeURIComponent(atob(blob)));
+			if (data.code.match(/handleDeepLink/)) {
+				var request = parseDeepLinkRequest(data.code);
+				if (!request.id || !request.team || !request.message) return;
+
+				request.cmd = 'channel';
+				TSSSB.handleDeepLinkWithArgs(JSON.stringify(request));
+				return;
+			} else {
+				origRendererEvalAsync(blob);
+			}
+		} catch (e) {
+		}
+	}
+}</script><script type="text/javascript">var TSSSB = {
+	call: function() {
+		return false;
+	}
+};</script><title>Sign in to Tenstorrent | Slack</title><meta name="referrer" content="no-referrer"><meta name="author" content="Slack"><meta name="description" content="Find and sign in to your Slack workspace."><meta name="keywords" content=""><meta name="robots" content="noindex, nofollow"></head><body class="full_height"><main id="main"><div id="page_contents"><div class="browser_support_check_page"><nav class="browser_support_notice_nav"><a data-clog-event="GROWTH_UNSUPPORTED_WEBCLIENT_BROWSER" data-clog-ui-action="click" data-clog-ui-element="link_home" data-clog-ui-step="unsupported_browser" class="logo_link" href="/"><img id="slack_logo" src="https://a.slack-edge.com/80588/img/slack_logo_240_vogue.png" width="120" height="137" title="Slack"></a></nav><div id="browser_support_notice"><div id="browser_support_content" class="large_bottom_margin"><h1 class="small_bottom_margin">This browser is no longer supported</h1><p class="large_bottom_margin medium_right_padding">We know it's a hassle to switch browsers, but we want your experience of Slack to be fast, secure, and the best it can possibly be.</p><p class="large_bottom_margin medium_right_padding">To continue, please switch to a supported browser, or — for the finest Slack experience — download the desktop app</p><p class="large_bottom_margin medium_right_padding">If you happen to know your workspace's url, <a href="/workspace-signin">please sign in manually here instead.</a></p><a href="/downloads" class="clear_both cta_lead medium_top_margin" data-clog-click="true" data-clog-event="GROWTH_UNSUPPORTED_WEBCLIENT_BROWSER" data-gtm-click="custEv_downloads_page_other" data-clog-ui-action="click" data-clog-ui-element="link_downloads" data-clog-ui-step="unsupported_browser" aria-label="Download the Slack app"><span class="team_icon_block small_right_margin"><span class="icon_bg icon_bg_download small_right_margin"><i class="c-icon c-icon--cloud-download"></i></span></span><span class="cta_text"><span class="link_head">Download the app</span></span><i class="ts_icon ts_icon_chevron_large_right float_right medium_left_padding"></i></a><a href="https://slack.com/help/articles/115002037526-Minimum-requirements-for-using-Slack" class="clear_both cta_lead no_bottom_margin" data-clog-click="true" data-clog-event="GROWTH_UNSUPPORTED_WEBCLIENT_BROWSER" data-clog-ui-action="click" data-clog-ui-step="unsupported_browser" data-clog-ui-element="link_help_center" aria-label="Switch to a supported browser"><span class="team_icon_block small_right_margin"><span class="icon_bg icon_bg_switch small_right_margin"><i class="c-icon c-icon--random"></i></span></span><span class="cta_text"><span class="link_head">Switch to a supported browser</span></span><i class="ts_icon ts_icon_chevron_large_right float_right medium_left_padding"></i></a><p class="descrip smaller_text small_top_margin">As always, feel free to
+							<a href="mailto:feedback@slack.com" data-clog-click="true" data-clog-event="GROWTH_UNSUPPORTED_WEBCLIENT_BROWSER" data-clog-ui-step="unsupported_browser" data-clog-ui-action="click" data-clog-ui-element="link_email_support" aria-lable="">contact us</a> if you have any questions, or visit our
+							<a href="https://slack.com/help/articles/115002037526-Minimum-requirements-for-using-Slack" data-clog-click="true" data-clog-event="GROWTH_UNSUPPORTED_WEBCLIENT_BROWSER" data-clog-ui-step="unsupported_browser" data-clog-ui-action="click" data-clog-ui-element="link_help_center" aria-lable="">FAQ</a> to learn more about browser support.</p></div></div></div><footer data-qa="footer"><section class="links"><div class="grid"><div class="col span_1_of_4 nav_col"><ul><li class="cat_1">Using Slack</li><li><a href="/is" data-qa="product_footer" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_product">Product</a></li><li><a href="/enterprise" data-qa="enterprise_footer" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_enterprise">Enterprise</a></li><li><a href="/pricing?ui_step=28&amp;ui_element=5" data-qa="pricing_footer" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_pricing">Pricing</a></li><li><a href="https://get.slack.help/hc/en-us" data-qa="support_footer" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_support">Support</a></li><li><a href="/guides" data-qa="getting_started" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_getting_started">Slack Guides</a></li><li><a href="/marketplace" data-qa="app_directory" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_app_directory">Slack Marketplace</a></li><li><a href="https://api.slack.com/" data-qa="api" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_api">API</a></li></ul></div><div class="col span_1_of_4 nav_col"><ul><li class="cat_2">Slack <ts-icon class="ts_icon_heart"></ts-icon></li><li><a href="/careers" data-qa="jobs" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_jobs">Jobs</a></li><li><a href="/customers" data-qa="customers" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_customers">Customers</a></li><li><a href="/developers" data-qa="developers" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_developers">Developers</a></li><li><a href="/events" data-qa="events" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_events">Events</a></li><li><a href="https://slackhq.com/" data-qa="blog_footer" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_blog">Blog</a></li></ul></div><div class="col span_1_of_4 nav_col"><ul><li class="cat_3">Legal</li><li><a href="/privacy-policy" data-qa="privacy" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_privacy">Privacy</a></li><li><a href="/trust/security" data-qa="security" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_security">Security</a></li><li><a href="/terms-of-service" data-qa="tos" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_tos">Terms of Service</a></li><li><a href="/legal" data-qa="policies" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_policies">Policies</a></li></ul></div><div class="col span_1_of_4 nav_col"><ul><li class="cat_4">Handy Links</li><li><a href="/downloads" data-qa="downloads" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_downloads">Download desktop app</a></li><li><a href="/downloads" data-qa="downloads_mobile" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_downloads_mobile">Download mobile app</a></li><li><a href="/brand-guidelines" data-qa="brand_guidelines" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_brand_guidelines">Brand Guidelines</a></li><li><a href="https://slackatwork.com" data-qa="slack_at_work" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_slack_at_work">Slack at Work</a></li><li><a href="https://slack-status.com" data-qa="status" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_status">Status</a></li></ul></div></div></section><div class="footnote"><section><a href="https://slack.com" aria-label="Slack homepage" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_slack_icon"><ts-icon class="c-icon--slack" aria-hidden></ts-icon></a><ul><li><a href="/help/requests/new" data-qa="contact_us" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_contact_us">Contact Us</a></li><li><a href="https://twitter.com/SlackHQ" data-qa="slack_twitter" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_slack_twitter" aria-label="Slack on Twitter"><ts-icon class="ts_icon_twitter" aria-hidden></ts-icon></a></li><li class="yt"><a href="https://www.youtube.com/channel/UCY3YECgeBcLCzIrFLP4gblw" data-qa="slack_youtube" data-clog-event="WEBSITE_CLICK" data-clog-params="click_target=footer_slack_youtube" aria-label="Slack on YouTube"><ts-icon class="ts_icon_youtube" aria-hidden></ts-icon></a></li></ul></section></div></footer></div></main><script type="text/javascript">
+/**
+ * A placeholder function that the build script uses to
+ * replace file paths with their CDN versions.
+ *
+ * @param {String} file_path - File path
+ * @returns {String}
+ */
+function vvv(file_path) {
+		 var vvv_warning = 'You cannot use vvv on dynamic values. Please make sure you only pass in static file paths.'; if (window.TS && window.TS.warn) { window.TS.warn(vvv_warning); } else { console.warn(vvv_warning); } 
+	return file_path;
+}
+
+var cdn_url = "https:\/\/a.slack-edge.com";
+var vvv_abs_url = "https:\/\/slack.com\/";
+var inc_js_setup_data = {
+	emoji_sheets: {
+		apple: 'https://a.slack-edge.com/80588/img/emoji_2017_12_06/sheet_apple_64_indexed_256.png',
+		google: 'https://a.slack-edge.com/80588/img/emoji_2017_12_06/sheet_google_64_indexed_256.png',
+	},
+};
+</script><script nonce="" type="text/javascript">	// common boot_data
+	var boot_data = {"cdn":{"edges":["https:\/\/a.slack-edge.com\/","https:\/\/b.slack-edge.com\/","https:\/\/a.slack-edge.com\/"],"avatars":"https:\/\/ca.slack-edge.com\/","downloads":"https:\/\/downloads.slack-edge.com\/","files":"https:\/\/slack-files.com\/"},"feature_builder_story_step":false,"feature_olug_remove_required_workspace_setting":false,"feature_file_threads":true,"feature_broadcast_indicator":true,"feature_sonic_emoji":true,"feature_attachments_inline":false,"feature_desktop_symptom_events":false,"feature_gdpr_user_join_tos":true,"feature_user_invite_tos_april_2018":true,"feature_channel_mgmt_message_count":false,"feature_channel_exports":false,"feature_allow_intra_word_formatting":true,"feature_slim_scrollbar":false,"feature_edge_upload_proxy_check":false,"feature_set_tz_automatically":true,"feature_attachments_v2":true,"feature_beacon_js_errors":false,"feature_user_app_disable_speed_bump":false,"feature_apps_manage_permissions_scope_changes":true,"feature_ia_member_profile":true,"feature_desktop_reload_on_generic_error":true,"feature_desktop_extend_app_menu":true,"feature_desktop_restart_service_worker":false,"feature_wta_stop_creation":true,"feature_admin_email_change_confirm":false,"feature_improved_email_rendering":true,"feature_recent_desktop_files":true,"feature_cea_allowlist_changes":false,"feature_cea_channel_management":true,"feature_cea_admin_controls":true,"feature_cea_allowlist_changes_plus":true,"feature_ia_layout":true,"feature_threaded_call_block":true,"feature_enterprise_mobile_device_check":true,"feature_trace_jq_init":true,"feature_seven_days_email_update":true,"feature_channel_sections":true,"feature_show_email_forwarded_by":false,"feature_mpdm_audience_expansion":true,"feature_remove_email_preview_link":true,"feature_desktop_enable_tslog":false,"feature_email_determine_charset":true,"feature_no_deprecation_in_updater":false,"feature_pea_domain_allowlist":true,"feature_composer_auth_admin":false,"experiment_assignments":{"email_optin_via_geo_library":{"experiment_id":"9482988226449","type":"visitor","group":"on","trigger":"hash_visitor","schedule_ts":1757370053,"log_exposures":false,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"optimize_get_started_flow":{"experiment_id":"9119755158055","type":"visitor","group":"control","trigger":"hash_visitor","schedule_ts":1757009002,"log_exposures":true,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"cust_acq_pricing_ai_canvas":{"experiment_id":"9410921566135","type":"visitor","group":"on","schedule_ts":1757514994,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"integrations_update":{"experiment_id":"9304450356548","type":"visitor","group":"on","schedule_ts":1755802338,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"cust_acq_pricing_ai_message_explanations":{"experiment_id":"9421957772933","type":"visitor","group":"on","schedule_ts":1757000631,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"marketing_hc_agent_send_ga":{"experiment_id":"9368939411444","type":"visitor","group":"on","schedule_ts":1756933151,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"slack_trials_tof":{"experiment_id":"9249692628519","type":"visitor","group":"treatment","trigger":"hash_visitor","schedule_ts":1756147961,"log_exposures":true,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"tts_as_link_nav":{"experiment_id":"9213138869990","type":"visitor","group":"treatment","trigger":"hash_visitor","schedule_ts":1756150558,"log_exposures":true,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"feat_add_email_verification_invite_flow":{"experiment_id":"9277969096562","type":"visitor","group":"treatment","trigger":"finished","log_exposures":false,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"invite_captcha":{"experiment_id":"9295205874790","type":"visitor","group":"on","schedule_ts":1755111734,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"cust_acq_sales_solutions_banner_override":{"experiment_id":"9383907502626","type":"visitor","group":"on","schedule_ts":1755807712,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"sticky_ctas":{"experiment_id":"9347505043607","type":"visitor","group":"on","schedule_ts":1755638126,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"activation_browser_deprecation_warning_august_2025":{"experiment_id":"9349312563030","type":"visitor","group":"on","schedule_ts":1755633796,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"versionify_url_for_invites":{"experiment_id":"9239948574183","type":"visitor","group":"on","schedule_ts":1753809230,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"marketing_templates_hreflang":{"experiment_id":"9344139344375","type":"visitor","group":"on","schedule_ts":1755280514,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"pricing_post_pnp_style_updates":{"experiment_id":"9269054427686","type":"visitor","group":"on","schedule_ts":1754594057,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"phone_number_de":{"experiment_id":"7168806134229","type":"visitor","group":"treatment","schedule_ts":1716908444,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"phone_number_fr":{"experiment_id":"7157169096183","type":"visitor","group":"treatment","schedule_ts":1716912646,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"phone_number_au":{"experiment_id":"7168837725445","type":"visitor","group":"treatment","schedule_ts":1716912663,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"phone_number_br":{"experiment_id":"7256414077620","type":"visitor","group":"treatment","schedule_ts":1719244830,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"phone_number_it":{"experiment_id":"7250980705925","type":"visitor","group":"treatment","schedule_ts":1719253456,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"phone_number_es":{"experiment_id":"7266548128369","type":"visitor","group":"treatment","schedule_ts":1719253482,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"phone_number_ca":{"experiment_id":"7256320861108","type":"visitor","group":"treatment","schedule_ts":1718813429,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"modular_pages_phase_3":{"experiment_id":"9032745384455","type":"visitor","group":"on","schedule_ts":1753834662,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"ratelimit_migrate_to_quota":{"experiment_id":"9222799109489","type":"visitor","group":"on","schedule_ts":1752856347,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"workflow_builder":{"experiment_id":"9193723819463","type":"visitor","group":"on","schedule_ts":1753792231,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"marketing_pricing_page_meta":{"experiment_id":"9253895333078","type":"visitor","group":"on","schedule_ts":1753723294,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"phone_number_pt":{"experiment_id":"7276731000896","type":"visitor","group":"treatment","schedule_ts":1719253468,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"phone_number_ko":{"experiment_id":"7276620382240","type":"visitor","group":"treatment","schedule_ts":1719852648,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"phone_number_ie":{"experiment_id":"7441623906036","type":"visitor","group":"treatment","schedule_ts":1721414251,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"phone_number_jp":{"experiment_id":"7174178940996","type":"visitor","group":"treatment","schedule_ts":1716583378,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"agent_demo_contact":{"experiment_id":"9180003200743","type":"visitor","group":"on","schedule_ts":1753365260,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"partner_promos_pnp":{"experiment_id":"8997210765159","type":"visitor","group":"on","schedule_ts":1750106249,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"july15_launch":{"experiment_id":"9119464602736","type":"visitor","group":"on","schedule_ts":1752754244,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"daily_limit_confirmation_code":{"experiment_id":"8869063590709","type":"visitor","group":"on","schedule_ts":1749751884,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"dreamforce_promo":{"experiment_id":"9163466061797","type":"visitor","group":"on","schedule_ts":1752590157,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"july1_launch":{"experiment_id":"9111164109201","type":"visitor","group":"on","schedule_ts":1751403911,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"apidocs_search_local_only_v2":{"experiment_id":"9128237007047","type":"visitor","group":"on","schedule_ts":1751574359,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"miro_marketplace":{"experiment_id":"8704952792931","type":"visitor","group":"on","schedule_ts":1750982806,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"channels_update":{"experiment_id":"8954244938662","type":"visitor","group":"on","schedule_ts":1748951415,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"spam_email_recaptcha_v3":{"experiment_id":"8890538137939","type":"visitor","group":"on","schedule_ts":1749589661,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"slack_marketplace_modern":{"experiment_id":"8041385254518","type":"visitor","group":"on","schedule_ts":1749135463,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"pro_discount_btf":{"experiment_id":"8830623175587","type":"visitor","group":"control","trigger":"finished","log_exposures":false,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"homepage_hero_atf_copy":{"experiment_id":"8709043044887","type":"visitor","group":"treatment_a","trigger":"finished","log_exposures":false,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"marketing_aff":{"experiment_id":"5743479690565","type":"visitor","group":"on","schedule_ts":1749577342,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"signin_design_refresh":{"experiment_id":"8656625636818","type":"visitor","group":"on","schedule_ts":1746462640,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"enterprise_search_demo":{"experiment_id":"8892730774644","type":"visitor","group":"on","schedule_ts":1749226177,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"creator_landing_view_refactor":{"experiment_id":"8986548312550","type":"visitor","group":"on","schedule_ts":1749141715,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"enable_optimizely_webapp":{"experiment_id":"7891954779538","type":"visitor","group":"on","schedule_ts":1747945849,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"sandbox_password_free_signin":{"experiment_id":"8766535145014","type":"visitor","group":"on","schedule_ts":1746821450,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"innovations_lp":{"experiment_id":"8253871971107","type":"visitor","group":"on","schedule_ts":1746643793,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"enterprise_search_lp":{"experiment_id":"8787098737047","type":"visitor","group":"on","schedule_ts":1746641312,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"aswebauth_cookie_session":{"experiment_id":"7920012625699","type":"visitor","group":"on","trigger":"finished","log_exposures":false,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"spam_email_recaptcha":{"experiment_id":"8449964217459","type":"visitor","group":"on","schedule_ts":1746141854,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"limit_confirmation_code_for_alias_email":{"experiment_id":"8695671490005","type":"visitor","group":"on","schedule_ts":1744822321,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"april_pages2":{"experiment_id":"8743286716099","type":"visitor","group":"on","schedule_ts":1745440781,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"mris_extension":{"experiment_id":"4746206947365","type":"visitor","group":"on","schedule_ts":1706216371,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"on24_extension":{"experiment_id":"4772019824211","type":"visitor","group":"on","schedule_ts":1675891595,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"sticky_fyp_cta":{"experiment_id":"8281275470644","type":"visitor","group":"control","trigger":"finished","log_exposures":false,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"downloads_launch":{"experiment_id":"8552687986532","type":"visitor","group":"on","schedule_ts":1741711036,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"add_team_creation_flow_segmentation":{"experiment_id":"8399073017011","type":"visitor","group":"on","schedule_ts":1741620581,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"activation_enterprise_signin_primer":{"experiment_id":"6443324713893","type":"visitor","group":"on","trigger":"finished","log_exposures":false,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"sf_fonts_latin":{"experiment_id":"7577927212402","type":"visitor","group":"on","schedule_ts":1739573433,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"sf_fonts_cjk":{"experiment_id":"7575044373701","type":"visitor","group":"on","schedule_ts":1739573413,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"slack_developer_program_trailhead_optimization":{"experiment_id":"8018607835799","type":"visitor","group":"on","schedule_ts":1737049638,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"screen_text_2fa":{"experiment_id":"7846147603012","type":"visitor","group":"on","schedule_ts":1734375504,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"app_directory_connectors_collection":{"experiment_id":"6321714753558","type":"visitor","group":"on","schedule_ts":1705448247,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"app_directory_connectors":{"experiment_id":"6144504493874","type":"visitor","group":"treatment","schedule_ts":1705354312,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"app_directory_coral":{"experiment_id":"8121125935588","type":"visitor","group":"on","trigger":"finished","log_exposures":false,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"get_started_improvements_flow":{"experiment_id":"8058657116197","type":"visitor","group":"on","schedule_ts":1733337366,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"marketplace_add":{"experiment_id":"7940445156581","type":"visitor","group":"on","schedule_ts":1732060351,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"api_docs_simplify_tutorials":{"experiment_id":"7629258500165","type":"visitor","group":"on","schedule_ts":1729024584,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"contact_sales_dept_removal":{"experiment_id":"6538486873169","type":"visitor","group":"treatment","trigger":"finished","log_exposures":false,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"marketing_ad_app_store_urls":{"experiment_id":"7746105288676","type":"visitor","group":"on","schedule_ts":1726699830,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"search_zd_vs_solr":{"experiment_id":"1355709002145","type":"visitor","group":"control","trigger":"finished","log_exposures":false,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"desktop_updater_v3_public_latest_release":{"experiment_id":"6724457596097","type":"visitor","group":"on","trigger":"finished","log_exposures":false,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"apidocs_ad_unit_enable":{"experiment_id":"6141172005908","type":"visitor","group":"off","trigger":"hash_visitor","schedule_ts":1712177688,"log_exposures":false,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"slack_developer_program":{"experiment_id":"5782848233798","type":"visitor","group":"on","schedule_ts":1709242483,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"downloads_s2p_promo":{"experiment_id":"7132023966439","type":"visitor","group":"treatment","trigger":"hash_visitor","schedule_ts":1718307458,"log_exposures":true,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"paid_lp_expand":{"experiment_id":"7134287733637","type":"visitor","group":"treatment","schedule_ts":1717713269,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"marketing_live_chat_emea":{"experiment_id":"7226533858036","type":"visitor","group":"on","schedule_ts":1717629445,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"new_paid_lp":{"experiment_id":"6818768684695","type":"visitor","group":"treatment","trigger":"finished","log_exposures":false,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"slack_elevate_launch":{"experiment_id":"6966627699558","type":"visitor","group":"on","schedule_ts":1713959798,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"marketing_recaptcha_hc":{"experiment_id":"6963734115829","type":"visitor","group":"on","schedule_ts":1713301140,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"marketing_hc_flow_specifier":{"experiment_id":"6989238991504","type":"visitor","group":"on","schedule_ts":1713296815,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"anthony_test_visitor_1":{"experiment_id":"6823470010164","type":"visitor","group":"treatment","schedule_ts":1712613615,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"marketing_media_kit":{"experiment_id":"6696687337684","type":"visitor","group":"on","schedule_ts":1709232747,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"mris_usercreator_live":{"experiment_id":"4921780175444","type":"visitor","group":"on","schedule_ts":1706216435,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"out_of_office_xmas_jp":{"experiment_id":"6296845198293","type":"visitor","group":"off","trigger":"finished","log_exposures":false,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"out_of_office_xmas":{"experiment_id":"6322553087328","type":"visitor","group":"off","trigger":"finished","log_exposures":false,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"marketing_hreflang_errors_fix":{"experiment_id":"6319747700807","type":"visitor","group":"on","schedule_ts":1702931766,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"eg_pricing":{"experiment_id":"6266727458225","type":"visitor","group":"on","schedule_ts":1702587412,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"new_gated_demo":{"experiment_id":"6171698537921","type":"visitor","group":"on","schedule_ts":1701209093,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"marketing_cj":{"experiment_id":"5820701519667","type":"visitor","group":"on","schedule_ts":1699033035,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"deny_russian_ip":{"experiment_id":"3201051153989","type":"visitor","group":"on","trigger":"finished","log_exposures":false,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"swap_ukraine_logo_toggle":{"experiment_id":"5598910456034","type":"visitor","group":"on","schedule_ts":1689885040,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"customer_awards_launch":{"experiment_id":"2673548411155","type":"visitor","group":"on","trigger":"finished","log_exposures":false,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"},"slack_ie_address":{"experiment_id":"4857849748754","type":"visitor","group":"on","schedule_ts":1677793396,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"proj_brand_customer_stories_lp":{"experiment_id":"3448021380448","type":"visitor","group":"on","schedule_ts":1653596127,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"digital_first_lightning_strike_custacq":{"experiment_id":"2220660679364","type":"visitor","group":"on","schedule_ts":1625075563,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"cust_acq_partners_template":{"experiment_id":"2232204551504","type":"visitor","group":"treatment","schedule_ts":1628191410,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"community_launch":{"experiment_id":"2652841576373","type":"visitor","group":"on","schedule_ts":1635871147,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17","trigger":"launch_visitor","log_exposures":false},"app_directory_aws_promotion_banner":{"experiment_id":"3025397781073","type":"visitor","group":"control","trigger":"finished","log_exposures":false,"exposure_id":"221d9b62ce42d55a66cc495e401e7a17"}},"no_login":false};</script><script type="text/javascript" crossorigin="anonymous" src="https://a.slack-edge.com/bv1-13/primer-vendor.8053ef7b3d5d7fad6d8b.primer.min.js" onload="window._cdn ? _cdn.ok(this, arguments) : null" onerror="window._cdn ? _cdn.failed(this, arguments) : null"></script><script type="text/javascript" crossorigin="anonymous" src="https://a.slack-edge.com/bv1-13/enterprise-signin-core.377ab3b628951713cad5.primer.min.js" onload="window._cdn ? _cdn.ok(this, arguments) : null" onerror="window._cdn ? _cdn.failed(this, arguments) : null" data-critical></script><link href="https://a.slack-edge.com/bv1-13/enterprise-signin-core.cc84fb4807eaaabe286c.primer.min.css" rel="stylesheet" type="text/css" onload="window._cdn ? _cdn.ok(this, arguments) : null" onerror="window._cdn ? _cdn.failed(this, arguments) : null" crossorigin="anonymous"><link href="https://a.slack-edge.com/bv1-13/rollup-style-slack-kit-base.767418db5478e85827e3.min.css" rel="stylesheet" id="slack_kit_helpers" type="text/css" onload="window._cdn ? _cdn.ok(this, arguments) : null" onerror="window._cdn ? _cdn.failed(this, arguments) : null" crossorigin="anonymous"><link href="https://a.slack-edge.com/bv1-13/rollup-style-slack-kit-helpers.5e90547af8ff7d44e076.min.css" rel="stylesheet" id="slack_kit_helpers" type="text/css" onload="window._cdn ? _cdn.ok(this, arguments) : null" onerror="window._cdn ? _cdn.failed(this, arguments) : null" crossorigin="anonymous"><script>if (window._cdn) _cdn.scanPageAssets();</script>
+
+<!-- slack-www-hhvm-main-iad-pozl/ 2025-09-12 08:16:29/ v0b8ee259727b734a8df13cbc629a4617e8438779/ B:H -->
+
+</body></html>
