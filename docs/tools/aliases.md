@@ -2,12 +2,38 @@
 
 ## Overview
 
-TODO: Document the aliases.sh map tool.
+Provides simple shell aliases to create a sequence of commits across a commit range. These help to quickly map commits downstream for help with bisecting.
+
+- metal_version_map: updates `TT_METAL_VERSION` in `third_party/CMakeLists.txt` for each tt-metal commit in a range (source repo: `third_party/tt-metal/src/tt-metal`).
+- mlir_version_map: updates `TT_MLIR_VERSION` in `third_party/CMakeLists.txt` for each tt-mlir commit in a range (source repo: `third_party/tt-mlir/src/tt-mlir`).
+- mlir_submodule_map: checks out each tt-mlir commit in the `third_party/tt-mlir` submodule and commits the submodule change.
 
 ## Usage
 
-TODO: Add usage instructions for aliases.sh.
+1) Make the aliases available in your shell:
+```bash
+source ./map/aliases.sh
+```
+
+2) Run `git rev-parse HEAD` to get the `before_commit_hash`.
+
+3) Run one of the aliases from repo root with a commit range in `abc..def` form (left must be an ancestor of right):
+```bash
+metal_version_map <tt-metal-range>
+mlir_version_map <tt-mlir-range>
+mlir_submodule_map <tt-mlir-range>
+```
+
+4) Run `git rev-parse HEAD` to get the `after_commit_hash`.
+
+5) New commit range is `before_commit_hash..after_commit_hash`. Run `git bisect start <after_commit_hash> <before_commit_hash> && git bisect run bash up/check_commit.sh` to start bisecting.
 
 ## Examples
-
-TODO: Add usage examples for aliases.sh.
+- Map tt-mlir commits to `TT_MLIR_VERSION` and create commits:
+```bash
+source ./map/aliases.sh
+$before_commit_hash=$(git rev-parse HEAD)
+mlir_version_map 111aaa..999fff
+$after_commit_hash=$(git rev-parse HEAD)
+git bisect start $after_commit_hash $before_commit_hash && git bisect run bash up/check_commit.sh
+```
