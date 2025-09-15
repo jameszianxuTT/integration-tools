@@ -2,12 +2,10 @@
 
 ## Overview
 
-TODO: Document the init.sh bisect tool.
+Creates a local `up/` directory with helper scripts used for bisecting. Script for mapping commits and running tt-mlir are downloaded, and made executable.
 
 ## Usage
 
-TODO: Add usage instructions.
-
-## Examples
-
-TODO: Add usage examples.
+```bash
+curl -sSL https://raw.githubusercontent.com/jameszianxuTT/integration-tools/refs/heads/main/bisect/init.sh | bash
+```
