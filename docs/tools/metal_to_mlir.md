@@ -25,7 +25,7 @@ Options:
 ./map/metal_to_mlir.sh 2a1b3c4..deadbeef
 ```
 
-- Opitonally, provide a patch range to cherry-pick corresponding MLIR fixes:
+- Optionally, provide a patch range to cherry-pick corresponding MLIR fixes:
 ```bash
 # Patch commit message titles should end with a metal SHA (at least first 5 chars of full sha)
 ./map/metal_to_mlir.sh -p 111aaa..999fff 1a2b3c4..5d6e7f8
