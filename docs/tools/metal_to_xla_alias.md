@@ -2,7 +2,7 @@
 
 ## Overview
 
-TODO: Document the metal_to_xla_alias.sh map_commit tool.
+TODO: Document the metal_to_xla_alias.sh map tool.
 
 ## Usage
 
