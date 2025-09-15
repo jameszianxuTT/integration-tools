@@ -32,8 +32,8 @@ mlir_submodule_map <tt-mlir-range>
 - Map tt-mlir commits to `TT_MLIR_VERSION` and create commits:
 ```bash
 source ./map/aliases.sh
-$before_commit_hash=$(git rev-parse HEAD)
+before_commit_hash=$(git rev-parse HEAD)
 mlir_version_map 111aaa..999fff
-$after_commit_hash=$(git rev-parse HEAD)
+after_commit_hash=$(git rev-parse HEAD)
 git bisect start $after_commit_hash $before_commit_hash && git bisect run bash up/check_commit.sh
 ```
