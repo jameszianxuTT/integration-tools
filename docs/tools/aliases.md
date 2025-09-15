@@ -2,10 +2,13 @@
 
 ## Overview
 
-Provides simple shell aliases to create a sequence of commits across a commit range. These help to quickly map commits downstream for help with bisecting.
+If an error in a downstream repo is caused by a change in an upstream repo, we can find the breaking upstream commit using these aliases. e.g. if an error in `tt-forge-fe` is caused by a change in `tt-mlir`, we can find the breaking `tt-mlir` commit using `mlir_submodule_map`.
 
-- metal_version_map: updates `TT_METAL_VERSION` in `third_party/CMakeLists.txt` for each tt-metal commit in a range (source repo: `third_party/tt-metal/src/tt-metal`).
-- mlir_version_map: updates `TT_MLIR_VERSION` in `third_party/CMakeLists.txt` for each tt-mlir commit in a range (source repo: `third_party/tt-mlir/src/tt-mlir`).
+We take the range of upstream commits we know to contain the breaking change, and use these aliases to create a sequence of commits in the downstream repo that map 1-1 with the upstream commits. This helps us run `git bisect` in the downstream repo directly, without having to left-shift the failing test.
+
+
+- metal_version_map: updates `TT_METAL_VERSION` in tt-mlir for each tt-metal commit in a range. Creates 1 tt-mlir commit for each of these tt-metal commits.
+- mlir_version_map: updates `TT_MLIR_VERSION` in `third_party/CMakeLists.txt` for each tt-mlir commit in a frontend repo. 
 - mlir_submodule_map: checks out each tt-mlir commit in the `third_party/tt-mlir` submodule and commits the submodule change.
 
 ## Usage
