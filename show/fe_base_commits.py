@@ -28,14 +28,14 @@ REPOS = {
 }
 
 def clone_or_pull(repo_name, url):
-    if repo_name == "tt-mlir":
-        # Always clone or pull with full history for tt-mlir
+    if repo_name == "tt-mlir" or repo_name == "tt-xla":
+        # Always clone or pull with full history for tt-mlir and xla (since tt-torch dependency on)
         if not Path(repo_name).exists():
             print(f"Cloning {repo_name} (full)...")
             subprocess.run(["git", "clone", url, repo_name], check=True)
         else:
             print(f"Pulling {repo_name} (full)...")
-            subprocess.run(["git", "-C", repo_name, "pull"], check=True)
+            subprocess.run(["git", "-C", repo_name, "fetch"], check=True)
     else:
         # Shallow clone for other repos
         if not Path(repo_name).exists():
@@ -43,7 +43,7 @@ def clone_or_pull(repo_name, url):
             subprocess.run(["git", "clone", "--depth", "1", url, repo_name], check=True)
         else:
             print(f"Pulling {repo_name}...")
-            subprocess.run(["git", "-C", repo_name, "pull"], check=True)
+            subprocess.run(["git", "-C", repo_name, "fetch"], check=True)
 
 def get_mlir_commit_from_cmakelists(repo_dir):
     cmake_path = Path(repo_dir) / "third_party" / "CMakeLists.txt"
