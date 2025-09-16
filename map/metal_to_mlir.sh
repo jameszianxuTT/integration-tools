@@ -250,7 +250,7 @@ main() {
   echo -e "\nRange of new commits:"
   echo -e "$new_range_start..$new_range_end\n\n"
 
-  local test_script="up/check_commit.sh"
+  local test_script="up/run/mlir.sh"
   echo -e "Please make sure $test_script has minimal repro and run following command to start bisect"
   echo -e "    git bisect start $new_range_end $new_range_start && git bisect run bash $test_script\n"
 }
