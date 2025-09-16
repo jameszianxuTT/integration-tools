@@ -29,7 +29,7 @@ mlir_submodule_map <tt-mlir-range>
 
 4) Run `git rev-parse HEAD` to get the `after_commit_hash`.
 
-5) New commit range is `before_commit_hash..after_commit_hash`. Run `git bisect start <after_commit_hash> <before_commit_hash> && git bisect run bash up/check_commit.sh` to start bisecting.
+5) New commit range is `before_commit_hash..after_commit_hash`. Run `git bisect start <after_commit_hash> <before_commit_hash> && git bisect run bash up/run/mlir.sh` to start bisecting.
 
 ## Examples
 - Map tt-mlir commits to `TT_MLIR_VERSION` and create commits:
@@ -38,5 +38,5 @@ source ./map/aliases.sh
 before_commit_hash=$(git rev-parse HEAD)
 mlir_version_map 111aaa..999fff
 after_commit_hash=$(git rev-parse HEAD)
-git bisect start $after_commit_hash $before_commit_hash && git bisect run bash up/check_commit.sh
+git bisect start $after_commit_hash $before_commit_hash && git bisect run bash up/run/mlir.sh
 ```

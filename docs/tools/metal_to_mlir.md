@@ -35,5 +35,5 @@ Options:
 
 - Start bisecting with the printed range (as instructed by the script):
 ```bash
-git bisect start <new_range_end> <new_range_start> && git bisect run bash up/check_commit.sh
+git bisect start <new_range_end> <new_range_start> && git bisect run bash up/run/mlir.sh
 ```

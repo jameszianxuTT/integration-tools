@@ -9,5 +9,5 @@ To bisect ongoing metal uplift PRs, we can use the following workflow:
 3. (Optional) If failure is in frontends, not mlir, repeat mapping step to the frontend repo 
    1. e.g. if metal commits mapped to mlir commits are `2b3c4d5..6e7f8g9`, we can use the appropriate alias to map to frontend, e.g. `mlir_submodule_map 2b3c4d5..6e7f8g9`
 4. Modify bash script that reproduces the issue/test to bisect
-   1. e.g. if the issue is in `test/test_foo.py`, we can modify `up/check_commit.sh` to run `pytest test/test_foo.py`
-5. Run `git bisect start <new_commit_hash> <current_commit_hash> && git bisect run bash up/check_commit.sh` to start bisecting.
+   1. e.g. if the issue is in `test/test_foo.py`, we can modify `up/run/mlir.sh` to run `pytest test/test_foo.py`
+5. Run `git bisect start <new_commit_hash> <current_commit_hash> && git bisect run bash up/run/mlir.sh` to start bisecting.
