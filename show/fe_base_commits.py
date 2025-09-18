@@ -14,7 +14,6 @@ tt-xla                         | N/A                                      | 8f31
 tt-forge-fe                    | N/A                                      | 17e1c32cd023ab1541ae56a8cdf9c6cb715e130e | 17e1c32cd | Saber Gholami | 2025-09-02 17:25:39 -0400 | [Optimizer] Add constraint API for memory management ops (#4734)
 '''
 
-
 import os
 import subprocess
 import re
@@ -100,6 +99,7 @@ def main():
         xla_commit = get_xla_commit_from_cmakelists("tt-torch")
         if xla_commit:
             # Checkout tt-xla at the specified commit
+            subprocess.run(["git", "-C", "tt-xla", "fetch", "origin", xla_commit], check=True)
             subprocess.run(["git", "-C", "tt-xla", "checkout", xla_commit], check=True)
 
             # Get tt-mlir commit from tt-xla
@@ -118,6 +118,7 @@ def main():
             else:
                 mlir_details = "N/A"
 
+            subprocess.run(["git", "-C", "tt-xla", "checkout", "-"], check=True)
             report.append(("tt-torch (using tt-xla mlir)", xla_commit[:40], mlir_commit or "N/A", mlir_details))
         else:
             report.append(("tt-torch (using tt-xla mlir)", "N/A", "N/A", "N/A"))
