@@ -3,6 +3,8 @@ import git
 import os
 import argparse
 import subprocess
+import requests
+import re
 from pprint import pprint
 REPOS = {
     "tt-torch": "https://github.com/tenstorrent/tt-torch.git",
@@ -78,6 +80,246 @@ def get_metal_change_from_metal_uplift_commit(commit):
                     after_hash = line.split('"')[1]
     return (before_hash, after_hash)
     
+
+def get_pr_files_and_changes(pr_url):
+    """
+    Fetch the files changed in a PR and their content.
+    Returns (pr_info, files_changed) where files_changed is a list of dicts with file info.
+    """
+    # Parse PR URL
+    m = re.match(r"https://github.com/([^/]+)/([^/]+)/pull/(\d+)", pr_url)
+    if not m:
+        raise ValueError("Invalid PR URL: " + pr_url)
+    owner, repo, pr_number = m.groups()
+    
+    # Get PR info
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    resp = requests.get(api_url)
+    if resp.status_code != 200:
+        raise ValueError(f"Failed to fetch PR {pr_number}: {resp.status_code}")
+    
+    pr_info = resp.json()
+    
+    # Get files changed in the PR
+    files_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/files"
+    files_resp = requests.get(files_url)
+    if files_resp.status_code != 200:
+        raise ValueError(f"Failed to fetch PR files: {files_resp.status_code}")
+    
+    files_changed = files_resp.json()
+    return pr_info, files_changed
+
+def extract_metal_version_changes_from_pr(pr_url):
+    """
+    Extract tt-metal version changes from a tt-mlir PR.
+    Returns (before_hash, after_hash) or (None, None) if no metal version change found.
+    """
+    pr_info, files_changed = get_pr_files_and_changes(pr_url)
+    
+    # Look for changes to third_party/CMakeLists.txt
+    for file_info in files_changed:
+        if file_info["filename"] == "third_party/CMakeLists.txt" and "patch" in file_info:
+            patch_content = file_info["patch"]
+            before_hash = None
+            after_hash = None
+            
+            for line in patch_content.splitlines():
+                if line.startswith("-set(TT_METAL_VERSION "):
+                    before_hash = line.split('"')[1]
+                elif line.startswith("+set(TT_METAL_VERSION "):
+                    after_hash = line.split('"')[1]
+            
+            if before_hash and after_hash:
+                return before_hash, after_hash
+    
+    return None, None
+
+def create_simulated_uplift_branch(fe_repo_name, pr_url, base_branch="main", new_branch="jzx/simulated_uplift"):
+    """
+    Create a simulated uplift branch by:
+    1. Extracting metal version changes from the PR
+    2. Creating a new tt-mlir branch with individual metal commits
+    3. Creating a single commit on the FE repo that updates TT_MLIR_VERSION to the new branch
+    """
+    if fe_repo_name != "tt-xla":
+        print(f"Error: --current-mlir-uplift is only supported for tt-xla, not {fe_repo_name}")
+        return None
+    
+    # Extract metal version changes
+    before_hash, after_hash = extract_metal_version_changes_from_pr(pr_url)
+    if not before_hash or not after_hash:
+        print("No tt-metal version changes found in the PR")
+        return None
+    
+    print(f"Found metal version change: {before_hash} -> {after_hash}")
+    
+    # Ensure tt-metal and tt-mlir repos are available
+    pull_or_clone_repo("tt-metal")
+    pull_or_clone_repo("tt-mlir")
+    
+    # Get metal commits in the range
+    metal_commits = get_commit_range("tt-metal", before_hash, after_hash)
+    if not metal_commits:
+        print("No metal commits found in the specified range")
+        return None
+    
+    print(f"Found {len(metal_commits)} metal commits to unroll")
+    
+    # Step 1: Create a new tt-mlir branch with individual metal commits
+    mlir_branch_name = f"jzx/metal_uplift_{after_hash[:8]}"
+    mlir_repo = git.Repo("tt-mlir")
+    
+    # Checkout main and create new branch
+    mlir_repo.git.checkout("main")
+    if mlir_branch_name in mlir_repo.heads:
+        mlir_repo.git.branch('-D', mlir_branch_name)
+    mlir_repo.git.checkout('-b', mlir_branch_name)
+    
+    mlir_cmakelists_path = os.path.join("tt-mlir", 'third_party', 'CMakeLists.txt')
+    
+    # Create individual commits for each metal commit in tt-mlir
+    for i, metal_commit in enumerate(reversed(metal_commits)):  # Reverse for chronological order
+        print(f"Creating tt-mlir commit {i+1}/{len(metal_commits)} for metal commit {metal_commit.hexsha[:8]}")
+        
+        # Update TT_METAL_VERSION to this metal commit
+        update_cmakelists_version(mlir_cmakelists_path, 'TT_METAL_VERSION', metal_commit.hexsha)
+        
+        # Stage changes (use relative path from repo root)
+        mlir_repo.git.add('third_party/CMakeLists.txt')
+        
+        # Create commit with descriptive message
+        commit_msg = f"Uplift tt-metal to {metal_commit.hexsha[:8]}"
+        commit_body = f"\n\nUplift third_party/tt-metal to {metal_commit.hexsha}\n\n"
+        commit_body += f"Original metal commit: {metal_commit.hexsha}\n{metal_commit.message.splitlines()[0]}"
+        commit_body += f"\n\nSimulated from PR: {pr_url}"
+        
+        mlir_repo.index.commit(
+            commit_msg + commit_body,
+            author=metal_commit.author,
+            committer=metal_commit.committer,
+            author_date=metal_commit.authored_datetime,
+            commit_date=metal_commit.committed_datetime
+        )
+    
+    print(f"Created tt-mlir branch '{mlir_branch_name}' with {len(metal_commits)} metal uplift commits")
+    
+    # Step 2: Create individual commits in tt-xla, each pointing to a specific tt-mlir commit
+    pull_or_clone_repo(fe_repo_name, base_branch)
+    fe_repo = git.Repo(fe_repo_name)
+    
+    # Create new FE branch
+    if new_branch in fe_repo.heads:
+        fe_repo.git.branch('-D', new_branch)
+    fe_repo.git.checkout('-b', new_branch)
+    
+    fe_cmakelists_path = os.path.join(fe_repo_name, 'third_party', 'CMakeLists.txt')
+    
+    # Get all commits from the new tt-mlir branch (in chronological order)
+    mlir_branch_commits = list(mlir_repo.iter_commits(mlir_branch_name))
+    mlir_branch_commits.reverse()  # Convert to chronological order
+    
+    # Create individual tt-xla commits for each tt-mlir commit
+    for i, (metal_commit, mlir_commit) in enumerate(zip(reversed(metal_commits), mlir_branch_commits)):
+        print(f"Creating tt-xla commit {i+1}/{len(metal_commits)} for metal->mlir commit {mlir_commit.hexsha[:8]}")
+        
+        # Update TT_MLIR_VERSION to point to this specific tt-mlir commit
+        update_cmakelists_version(fe_cmakelists_path, 'TT_MLIR_VERSION', mlir_commit.hexsha)
+        
+        # Stage changes (use relative path from repo root)
+        fe_repo.git.add('third_party/CMakeLists.txt')
+        
+        # Create commit with descriptive message
+        commit_msg = f"Uplift third_party/tt-mlir to {mlir_commit.hexsha[:8]}"
+        commit_body = f"\n\nUplift third_party/tt-mlir to {mlir_commit.hexsha}\n\n"
+        commit_body += f"This commit corresponds to metal commit:\n"
+        commit_body += f"  {metal_commit.hexsha[:8]}: {metal_commit.message.splitlines()[0]}\n\n"
+        commit_body += f"Which was unrolled into tt-mlir commit:\n"
+        commit_body += f"  {mlir_commit.hexsha[:8]}: {mlir_commit.message.splitlines()[0]}\n\n"
+        commit_body += f"Simulated from PR: {pr_url}"
+        
+        fe_repo.index.commit(
+            commit_msg + commit_body,
+            author=metal_commit.author,
+            committer=metal_commit.committer,
+            author_date=metal_commit.authored_datetime,
+            commit_date=metal_commit.committed_datetime
+        )
+    
+    print(f"\nSimulated uplift branches created:")
+    print(f"  tt-mlir: {mlir_branch_name} (with {len(metal_commits)} individual metal commits)")
+    print(f"  tt-xla: {new_branch} (with {len(metal_commits)} individual uplift commits)")
+    
+    # Print summary tables
+    print_simulated_mlir_table("tt-mlir", mlir_branch_name, pr_url)
+    print_simulated_fe_table(fe_repo_name, new_branch, pr_url, mlir_branch_commits)
+    
+    return new_branch, mlir_branch_name
+
+def print_simulated_mlir_table(mlir_repo_path, branch_name, pr_url):
+    """
+    Print a table showing the simulated tt-mlir uplift commits.
+    """
+    repo = git.Repo(mlir_repo_path)
+    commits = list(repo.iter_commits(branch_name))
+    
+    YELLOW = '\033[1;33m'
+    RESET = '\033[0m'
+    
+    print(f"\n{YELLOW}Simulated tt-mlir Branch (from PR: {pr_url}):{RESET}\n")
+    print(f"{'MLIR_COMMIT':10} | {'METAL_COMMIT':12} | {'DATE':12} | MESSAGE")
+    print("-" * 100)
+    
+    for commit in commits:
+        # Extract metal commit hash from commit message
+        metal_hash = "unknown"
+        lines = commit.message.splitlines()
+        for line in lines:
+            if line.startswith("Original metal commit:"):
+                metal_hash = line.split(": ")[1][:8] if ": " in line else "unknown"
+                break
+        
+        date = commit.committed_datetime.strftime('%Y-%m-%d')
+        msg = commit.message.splitlines()[0]
+        
+        print(f"{commit.hexsha[:8]:10} | {metal_hash:12} | {date:12} | {msg}")
+    
+    print(f"\nTotal: {len(commits)} tt-mlir commits with individual metal uplifts")
+
+def print_simulated_fe_table(fe_repo_path, branch_name, pr_url, mlir_commits):
+    """
+    Print a table showing the simulated FE uplift commits.
+    """
+    repo = git.Repo(fe_repo_path)
+    fe_commits = list(repo.iter_commits(branch_name))
+    fe_commits.reverse()  # Convert to chronological order
+    
+    GREEN = '\033[1;32m'
+    RESET = '\033[0m'
+    
+    print(f"\n{GREEN}Simulated tt-xla Branch (from PR: {pr_url}):{RESET}\n")
+    print(f"{'FE_COMMIT':10} | {'MLIR_COMMIT':12} | {'METAL_COMMIT':12} | {'DATE':12} | MESSAGE")
+    print("-" * 110)
+    
+    for i, fe_commit in enumerate(fe_commits):
+        # Extract mlir and metal commit info from commit message
+        mlir_hash = "unknown"
+        metal_hash = "unknown"
+        
+        lines = fe_commit.message.splitlines()
+        for line in lines:
+            if "Uplift third_party/tt-mlir to" in line:
+                mlir_hash = line.split()[-1][:8]
+            elif line.strip().startswith("  ") and ":" in line and len(line.split(":")[0].strip()) == 8:
+                # This looks like a metal commit line
+                metal_hash = line.split(":")[0].strip()
+                break
+        
+        date = fe_commit.committed_datetime.strftime('%Y-%m-%d')
+        msg = fe_commit.message.splitlines()[0]
+        
+        print(f"{fe_commit.hexsha[:8]:10} | {mlir_hash:12} | {metal_hash:12} | {date:12} | {msg}")
+    
+    print(f"\nTotal: {len(fe_commits)} tt-xla commits with individual mlir uplifts")
 
 def is_mlir_uplift_commit(commit):
     """
@@ -384,13 +626,29 @@ def prompt_and_force_push(fe_repo, mlir_repo, branch="jzx/uplift_tree"):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("frontend", choices=REPOS.keys(), help="Frontend repo name (e.g. tt-xla)")
-    parser.add_argument("start_commit", help="Start commit (exclusive, append ^ to include first commit). Can be relative to HEAD, eg HEAD~5")
+    parser.add_argument("start_commit", nargs="?", help="Start commit (exclusive, append ^ to include first commit). Can be relative to HEAD, eg HEAD~5")
     parser.add_argument("end_commit", nargs="?", default="HEAD", help="End commit (inclusive). Default to HEAD if not specified")
     parser.add_argument("--fe-only", action="store_true", help="Only unroll MLIR -> FE uplifts, keep metal uplifts intact")
     parser.add_argument("--fe-branch", default="main", help="FE branch to use as base for commit range and new branch creation (default: main)")
     parser.add_argument("--patch", action="append", nargs=2, metavar=("MLIR_COMMIT", "PATCH_FILE"), 
                         help="Apply patch file at specific MLIR commit. Can be used multiple times. Format: --patch <mlir_commit_hash> <patch_file_path>")
+    parser.add_argument("--current-mlir-uplift", help="GitHub PR URL for a current (unmerged) tt-mlir uplift to simulate (e.g., https://github.com/tenstorrent/tt-mlir/pull/5394)")
     args = parser.parse_args()
+    
+    # Handle simulated uplift mode
+    if args.current_mlir_uplift:
+        if not args.start_commit:
+            print("Creating simulated uplift branch for current PR...")
+            create_simulated_uplift_branch(args.frontend, args.current_mlir_uplift, args.fe_branch)
+            return 0
+        else:
+            print("Error: --current-mlir-uplift cannot be used with start_commit/end_commit range")
+            return 1
+    
+    # Validate required arguments for normal mode
+    if not args.start_commit:
+        print("Error: start_commit is required when not using --current-mlir-uplift")
+        return 1
     
     # Process patch mappings
     patch_mappings = {}
@@ -447,10 +705,11 @@ if __name__ == "__main__":
     main()
     
 # test case 
-# ./autobisect.py tt-torch 646aee02 601cc121
-# ./autobisect.py tt-torch 646aee02 601cc121 --fe-only
-# ./autobisect.py tt-torch 646aee02 601cc121 --fe-branch uplift --patch abc123def path/to/fix.patch
-# ./autobisect.py tt-torch 646aee02 601cc121 --patch abc123def path/to/fix1.patch --patch def456ghi path/to/fix2.patch
+# ./uplift_history.py tt-torch 646aee02 601cc121
+# ./uplift_history.py tt-torch 646aee02 601cc121 --fe-only
+# ./uplift_history.py tt-torch 646aee02 601cc121 --fe-branch uplift --patch abc123def path/to/fix.patch
+# ./uplift_history.py tt-torch 646aee02 601cc121 --patch abc123def path/to/fix1.patch --patch def456ghi path/to/fix2.patch
+# ./uplift_history.py tt-xla --current-mlir-uplift https://github.com/tenstorrent/tt-mlir/pull/5394
 
 
 '''
