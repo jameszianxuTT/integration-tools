@@ -2,9 +2,9 @@
 
 # setup
 # Use docker image ghcr.io/tenstorrent/tt-mlir/tt-mlir-ird-ubuntu-22-04:latest
+# sudo apt update && sudo apt install -y libprotobuf-dev protobuf-compiler python3.11 python3.11-venv python3.11-dev
 # export TTMLIR_TOOLCHAIN_DIR=/opt/ttmlir-toolchain
 # source venv/activate
-# sudo apt update && sudo apt install -y libprotobuf-dev protobuf-compiler python3.11 python3.11-venv python3.11-dev
 # git submodule update --init --recursive
 
 
@@ -35,7 +35,7 @@ if [ $? -ne 0 ]; then
     exit 125
 fi
 
-pytest -svv tests/jax/ops/test_convert.py |& tee logs/convert.log
+pytest -svv tests/jax/single_chip/ops/test_convert.py |& tee logs/convert.log
 if [ $? -ne 0 ]; then
     echo -e "Convert test failed\n" >> logs/bisect_log.log
     exit 1

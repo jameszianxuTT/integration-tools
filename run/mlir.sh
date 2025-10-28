@@ -34,16 +34,15 @@ if [ $? -ne 0 ]; then
     echo -e "Build failed\n" >> logs/bisect_log.log
     exit 125
 fi
-cmake --build build -- ttrt |& tee logs/build/build_ttrt.log
-if [ $? -ne 0 ]; then
-    echo -e "ttrt Build failed\n" >> logs/bisect_log.log
-    exit 125
-fi
 rm -rf ttrt-artifacts && ttrt query --save-artifacts |& tee logs/artifacts.log && export SYSTEM_DESC_PATH=`pwd`/ttrt-artifacts/system_desc.ttsys
 if [ $? -ne 0 ]; then
     echo -e "ttrt query failed\n" >> logs/bisect_log.log
     exit 125
 fi
+
+# Exit early
+# echo -e "Build passed\n" >> logs/bisect_log.log
+# exit 0
 
 
 # regtest
