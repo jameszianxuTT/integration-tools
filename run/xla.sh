@@ -12,6 +12,9 @@
 set -o pipefail
 mkdir -p logs/build
 
+# Source common functions
+source "$(dirname "$0")/common.sh"
+
 # before checking every commit, show the current window of commits left to bisect
 echo -e "Currently bisecting commit:\n$(git log -1 --oneline)\n\nWindow remaining:\n$(git bisect visualize --oneline)" > logs/bisect_status.log
 # install tt-smi if not installed. uncomment if tt-smi used
@@ -24,22 +27,10 @@ echo -e "\n\nbisecting commit: $(git log -1 --oneline)\n" >> logs/bisect_log.log
 # build 
 rm -rf build/ install/ third_party/tt-mlir/
 
-cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release |& tee logs/build/cmake.log 
-if [ $? -ne 0 ]; then
-    echo -e "Build conf failed\n" >> logs/bisect_log.log
-    exit 125
-fi
-cmake --build build |& tee logs/build/build.log
-if [ $? -ne 0 ]; then
-    echo -e "Build failed\n" >> logs/bisect_log.log
-    exit 125
-fi
+cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release |& tee logs/build/cmake.log; log_result $? "cmake-config" $UP_SKIP
+cmake --build build |& tee logs/build/build.log; log_result $? "cmake-build" $UP_SKIP
 
-pytest -svv tests/jax/single_chip/ops/test_convert.py |& tee logs/convert.log
-if [ $? -ne 0 ]; then
-    echo -e "Convert test failed\n" >> logs/bisect_log.log
-    exit 1
-fi
+pytest -svv tests/jax/single_chip/ops/test_convert.py |& tee logs/convert.log; log_result $? "convert-test"
 
 echo -e "Test passed\n" >> logs/bisect_log.log
 exit 0
