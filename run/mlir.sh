@@ -1,26 +1,18 @@
 #!/bin/bash
 
-# setup
+# Repo setup
 # Use docker image ghcr.io/tenstorrent/tt-mlir/tt-mlir-ird-ubuntu-22-04:latest
 # source env/activate
 
-# to make sure exit status is propagated even when using tee to capture output logs
-set -o pipefail
-mkdir -p logs/build
+{ # Script setup
+    set -o pipefail # to make sure exit status is propagated even when using tee to capture output logs
+    mkdir -p logs/build
+    source "$(dirname "$0")/common.sh" # Source common functions
+    echo -e "\n\nbisecting commit: $(git log -1 --oneline)\n" >> logs/bisect_log.log
+    # echo -e "Currently bisecting commit:\n$(git log -1 --oneline)\n\nWindow remaining:\n$(git bisect visualize --oneline)" > logs/bisect_status.log
+}
 
-# Source common functions
-source "$(dirname "$0")/common.sh"
-# before checking every commit, show the current window of commits left to bisect
-echo -e "Currently bisecting commit:\n$(git log -1 --oneline)\n\nWindow remaining:\n$(git bisect visualize --oneline)" > logs/bisect_status.log
-# install tt-smi if not installed. uncomment if tt-smi used
-# which tt-smi || pip install git+https://github.com/tenstorrent/tt-smi |& tee logs/tt_smi_install.log
-# tt-smi -r
-
-
-echo -e "\n\nbisecting commit: $(git log -1 --oneline)\n" >> logs/bisect_log.log
-
-# build
-{
+{ # build steps
     rm -rf build third_party/tt-metal
     ## speedy
     cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang-17 -DCMAKE_CXX_COMPILER=clang++-17 -DTTMLIR_ENABLE_RUNTIME=ON -DTTMLIR_ENABLE_RUNTIME_TESTS=ON -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DTTMLIR_ENABLE_STABLEHLO=ON -DTTMLIR_ENABLE_OPMODEL=ON |& tee logs/build/cmake_cfg.log

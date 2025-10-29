@@ -1,30 +1,22 @@
 #!/bin/bash
 
-# setup
-# Use docker image ghcr.io/tenstorrent/tt-forge-fe/tt-forge-fe-ird-ubuntu-22-04:latest
-# source env/activate
-# git submodule update --init --recursive -f 
-# pip install cmake pytest
-# sudo apt install -y libgl1 libglx-mesa0
-# cmake -B env/build env -DTTFORGE_SKIP_BUILD_TTMLIR_ENV=ON |& tee logs/build/env_build_conf.log
-# cmake --build env/build |& tee logs/build/env_build.log
+{ # Repo setup
+    # Use docker image ghcr.io/tenstorrent/tt-forge-fe/tt-forge-fe-ird-ubuntu-22-04:latest
+    # source env/activate
+    # git submodule update --init --recursive -f 
+    # pip install cmake pytest
+    # sudo apt install -y libgl1 libglx-mesa0
+    # cmake -B env/build env -DTTFORGE_SKIP_BUILD_TTMLIR_ENV=ON |& tee logs/build/env_build_conf.log
+    # cmake --build env/build |& tee logs/build/env_build.log
+}
 
-
-
-# to make sure exit status is propagated even when using tee to capture output logs
-set -o pipefail
-mkdir -p logs/build
-
-# Source common functions
-source "$(dirname "$0")/common.sh"
-
-# before checking every commit, show the current window of commits left to bisect
-echo -e "Currently bisecting commit:\n$(git log -1 --oneline)\n\nWindow remaining:\n$(git bisect visualize --oneline)" > logs/bisect_status.log
-# install tt-smi if not installed. uncomment if tt-smi used
-# which tt-smi || pip install git+https://github.com/tenstorrent/tt-smi |& tee logs/tt_smi_install.log
-# tt-smi -r
-
-echo -e "\n\nbisecting commit: $(git log -1 --oneline)\n" >> logs/bisect_log.log
+{ # Script setup
+    set -o pipefail # to make sure exit status is propagated even when using tee to capture output logs
+    mkdir -p logs/build
+    source "$(dirname "$0")/common.sh" # Source common functions
+    echo -e "\n\nbisecting commit: $(git log -1 --oneline)\n" >> logs/bisect_log.log
+    # echo -e "Currently bisecting commit:\n$(git log -1 --oneline)\n\nWindow remaining:\n$(git bisect visualize --oneline)" > logs/bisect_status.log
+}
 
 # update tt-mlir submodule
 git submodule update --init --recursive --force third_party/tt-mlir

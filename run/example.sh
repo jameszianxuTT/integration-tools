@@ -6,10 +6,10 @@ set -o pipefail
 # make sure logs directory exists
 mkdir -p logs/build
 
-# before checking every commit, show the current window of commits left to bisect
-echo -e "Currently bisecting commit:\n$(git log -1 --oneline)\n\nWindow remaining:\n$(git bisect visualize --oneline)" > logs/bisect_status.log
 # log commit being bisected
 echo -e "\n\nbisecting commit: $(git log -1 --oneline)\n" >> logs/bisect_log.log
+# before checking every commit, show the current window of commits left to bisect
+# echo -e "Currently bisecting commit:\n$(git log -1 --oneline)\n\nWindow remaining:\n$(git bisect visualize --oneline)" > logs/bisect_status.log
 
 # install tt-smi if not installed. uncomment if tt-smi used
 which tt-smi || pip install git+https://github.com/tenstorrent/tt-smi |& tee logs/tt_smi_install.log
