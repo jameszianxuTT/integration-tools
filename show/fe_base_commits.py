@@ -20,7 +20,7 @@ import re
 from pathlib import Path
 
 REPOS = {
-    "tt-torch": "https://github.com/tenstorrent/tt-torch.git",
+    # "tt-torch": "https://github.com/tenstorrent/tt-torch.git",
     "tt-xla": "https://github.com/tenstorrent/tt-xla.git",
     "tt-forge-fe": "https://github.com/tenstorrent/tt-forge-fe.git",
     "tt-mlir": "https://github.com/tenstorrent/tt-mlir.git",
