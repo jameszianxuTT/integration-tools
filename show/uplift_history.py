@@ -134,7 +134,7 @@ def extract_metal_version_changes_from_pr(pr_url):
     
     return None, None
 
-def create_simulated_uplift_branch(fe_repo_name, pr_url, base_branch="main", new_branch="jzx/simulated_uplift", push_mlir_branch=False):
+def create_simulated_uplift_branch(fe_repo_name, pr_url, base_branch="main", new_branch="jzx/simulated_uplift"):
     """
     Create a simulated uplift branch by:
     1. Extracting metal version changes from the PR
@@ -215,8 +215,7 @@ def create_simulated_uplift_branch(fe_repo_name, pr_url, base_branch="main", new
     fe_cmakelists_path = os.path.join(fe_repo_name, 'third_party', 'CMakeLists.txt')
     
     # Get all commits from the new tt-mlir branch (in chronological order)
-    # We only want the commits we just created, not the entire branch history
-    mlir_branch_commits = list(mlir_repo.iter_commits(mlir_branch_name, max_count=len(metal_commits)))
+    mlir_branch_commits = list(mlir_repo.iter_commits(mlir_branch_name))
     mlir_branch_commits.reverse()  # Convert to chronological order
     
     # Create individual tt-xla commits for each tt-mlir commit
@@ -249,22 +248,6 @@ def create_simulated_uplift_branch(fe_repo_name, pr_url, base_branch="main", new
     print(f"\nSimulated uplift branches created:")
     print(f"  tt-mlir: {mlir_branch_name} (with {len(metal_commits)} individual metal commits)")
     print(f"  tt-xla: {new_branch} (with {len(metal_commits)} individual uplift commits)")
-    
-    # Push tt-mlir branch if requested
-    if push_mlir_branch:
-        print(f"\nPushing tt-mlir branch '{mlir_branch_name}' to remote...")
-        try:
-            mlir_repo.git.push('origin', mlir_branch_name)
-            print(f"✓ Successfully pushed tt-mlir branch: {mlir_branch_name}")
-        except Exception as e:
-            print(f"✗ Failed to push tt-mlir branch: {e}")
-    else:
-        print(f"\nTo push the tt-mlir branch, run:")
-        print(f"  cd tt-mlir && git push origin {mlir_branch_name}")
-        print(f"  or use --push-mlir-branch flag")
-    
-    print(f"\nTo push the tt-xla branch, run:")
-    print(f"  cd {fe_repo_name} && git push origin {new_branch}")
     
     # Print summary tables
     print_simulated_mlir_table("tt-mlir", mlir_branch_name, pr_url)
@@ -492,13 +475,11 @@ def update_cmakelists_version(cmakelists_path, var_name, new_hash):
     import re
     with open(cmakelists_path, 'r') as f:
         lines = f.readlines()
-    pattern = re.compile(rf'(\s*)set\({var_name} ".*"\)')
+    pattern = re.compile(rf'set\({var_name} ".*"\)')
+    new_line = f'set({var_name} "{new_hash}")\n'
     for i, line in enumerate(lines):
-        match = pattern.match(line)
-        if match:
-            indent = match.group(1)  # Preserve original indentation
-            lines[i] = f'{indent}set({var_name} "{new_hash}")\n'
-            break
+        if pattern.match(line):
+            lines[i] = new_line
     with open(cmakelists_path, 'w') as f:
         f.writelines(lines)
 
@@ -655,14 +636,13 @@ def main():
     parser.add_argument("--patch", action="append", nargs=2, metavar=("MLIR_COMMIT", "PATCH_FILE"), 
                         help="Apply patch file at specific MLIR commit. Can be used multiple times. Format: --patch <mlir_commit_hash> <patch_file_path>")
     parser.add_argument("--current-mlir-uplift", help="GitHub PR URL for a current (unmerged) tt-mlir uplift to simulate (e.g., https://github.com/tenstorrent/tt-mlir/pull/5394)")
-    parser.add_argument("--push-mlir-branch", action="store_true", help="Push the created tt-mlir branch to remote (only applicable with --current-mlir-uplift)")
     args = parser.parse_args()
     
     # Handle simulated uplift mode
     if args.current_mlir_uplift:
         if not args.start_commit:
             print("Creating simulated uplift branch for current PR...")
-            create_simulated_uplift_branch(args.frontend, args.current_mlir_uplift, args.fe_branch, push_mlir_branch=args.push_mlir_branch)
+            create_simulated_uplift_branch(args.frontend, args.current_mlir_uplift, args.fe_branch)
             return 0
         else:
             print("Error: --current-mlir-uplift cannot be used with start_commit/end_commit range")

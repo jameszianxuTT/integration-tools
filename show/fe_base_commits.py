@@ -7,11 +7,10 @@ It will clone / pull all relevant repos and display a table of the tt-mlir commi
 Take notice of the tt-mlir commit/tt-mlir commit details column. This is the stable base commit used by that repo in CI.
 
 Example output:
-repo name                      | tt-xla commit                            | tt-mlir commit                           | ttmlir commit details
-------------------------------------------------------------------------------------------------------------------------------------------------------
-tt-torch (using tt-xla mlir)   | 90c981f6b0547ad7819ac60aca64fce4e82c2e3c | c659dddd8240ea85202c789aa2a886992ec66c44 | c659dddd8 | Marina Vasiljevic | 2025-09-01 17:46:06 +0200 | Enable convolution bias fusing when input is broadcasted (#4732)
-tt-xla                         | N/A                                      | 8f318886f6cb299a753f5dff1bbf0e5083c4dfd5 | 8f318886f | Tapasvi Patel | 2025-09-06 17:01:42 -0500 | Remove shardy roundtrip patch due to jax0.7 uplift (#4816)
-tt-forge-fe                    | N/A                                      | 17e1c32cd023ab1541ae56a8cdf9c6cb715e130e | 17e1c32cd | Saber Gholami | 2025-09-02 17:25:39 -0400 | [Optimizer] Add constraint API for memory management ops (#4734)
+repo name                      | tt-mlir commit                           | ttmlir commit details
+----------------------------------------------------------------------------------------------------------------------
+tt-xla                         | 8f318886f6cb299a753f5dff1bbf0e5083c4dfd5 | 8f318886f | Tapasvi Patel | 2025-09-06 17:01:42 -0500 | Remove shardy roundtrip patch due to jax0.7 uplift (#4816)
+tt-forge-fe                    | 17e1c32cd023ab1541ae56a8cdf9c6cb715e130e | 17e1c32cd | Saber Gholami | 2025-09-02 17:25:39 -0400 | [Optimizer] Add constraint API for memory management ops (#4734)
 '''
 
 import os
@@ -28,7 +27,7 @@ REPOS = {
 
 def clone_or_pull(repo_name, url):
     if repo_name == "tt-mlir" or repo_name == "tt-xla":
-        # Always clone or pull with full history for tt-mlir and xla (since tt-torch dependency on)
+        # Always clone or pull with full history for tt-mlir and xla
         if not Path(repo_name).exists():
             print(f"Cloning {repo_name} (full)...")
             subprocess.run(["git", "clone", url, repo_name], check=True)
@@ -51,17 +50,6 @@ def get_mlir_commit_from_cmakelists(repo_dir):
     with open(cmake_path) as f:
         for line in f:
             m = re.search(r'set\(TT_MLIR_VERSION\s+"([0-9a-f]+)"\)', line)
-            if m:
-                return m.group(1)
-    return None
-
-def get_xla_commit_from_cmakelists(repo_dir):
-    cmake_path = Path(repo_dir) / "third_party" / "CMakeLists.txt"
-    if not cmake_path.exists():
-        return None
-    with open(cmake_path) as f:
-        for line in f:
-            m = re.search(r'set\(TT_XLA_VERSION\s+"([0-9a-f]+)"\)', line)
             if m:
                 return m.group(1)
     return None
@@ -94,35 +82,6 @@ def main():
 
     report = []
 
-    # Handle tt-torch specifically for tt-xla and tt-mlir dependencies
-    if "tt-torch" in REPOS:
-        xla_commit = get_xla_commit_from_cmakelists("tt-torch")
-        if xla_commit:
-            # Checkout tt-xla at the specified commit
-            subprocess.run(["git", "-C", "tt-xla", "fetch", "origin", xla_commit], check=True)
-            subprocess.run(["git", "-C", "tt-xla", "checkout", xla_commit], check=True)
-
-            # Get tt-mlir commit from tt-xla
-            mlir_commit = get_mlir_commit_from_cmakelists("tt-xla")
-            if mlir_commit:
-                # Check if commit exists locally before fetching
-                try:
-                    subprocess.run(["git", "-C", "tt-mlir", "cat-file", "-e", mlir_commit], check=True)
-                except subprocess.CalledProcessError:
-                    # Commit does not exist locally, try to fetch from remote
-                    try:
-                        subprocess.run(["git", "-C", "tt-mlir", "fetch", "origin", mlir_commit], check=True)
-                    except subprocess.CalledProcessError:
-                        print(f"Warning: Could not fetch commit {mlir_commit} from remote. It may not exist on origin.")
-                mlir_details = get_commit_details("tt-mlir", mlir_commit)
-            else:
-                mlir_details = "N/A"
-
-            subprocess.run(["git", "-C", "tt-xla", "checkout", "-"], check=True)
-            report.append(("tt-torch (using tt-xla mlir)", xla_commit[:40], mlir_commit or "N/A", mlir_details))
-        else:
-            report.append(("tt-torch (using tt-xla mlir)", "N/A", "N/A", "N/A"))
-
     # Handle other repos
     for repo in ["tt-xla", "tt-forge-fe"]:
         if repo == "tt-xla":
@@ -148,14 +107,14 @@ def main():
             details = get_commit_details("tt-mlir", commit)
         else:
             details = "N/A"
-        report.append((repo, "N/A",commit or "N/A", details))
+        report.append((repo, commit or "N/A", details))
 
     # Print table
     print('\n')
-    print(f"{'repo name':<30} | {'tt-xla commit':<40} | {'tt-mlir commit':<40} | ttmlir commit details")
-    print("-" * 150)
+    print(f"{'repo name':<30} | {'tt-mlir commit':<40} | ttmlir commit details")
+    print("-" * 120)
     for row in report:
-        print(f"{row[0]:<30} | {row[1]:<40} | {row[2]:<40} | {row[3]}")
+        print(f"{row[0]:<30} | {row[1]:<40} | {row[2]}")
 
 if __name__ == "__main__":
     main()
