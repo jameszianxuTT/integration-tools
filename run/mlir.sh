@@ -124,15 +124,15 @@ log_result $? "check-ttmlir" $UP_BAD
 
 { # emitc commands
     # emitc full test suite
-    rm -rf ttrt-artifacts/ && ttrt query --save-artifacts |& tee logs/artifacts.log && llvm-lit -sv test/ttmlir/EmitC/TTNN |& tee logs/emitc_1.log && tools/ttnn-standalone/ci_compile_dylib.py |& tee logs/emitc_2.log && TTRT_LOGGER_LEVEL=DEBUG ttrt run --emitc build/test/ttmlir/EmitC/TTNN |& tee logs/emitc_3.log
+    rm -rf ttrt-artifacts/ && ttrt query --save-artifacts |& tee logs/artifacts.log && llvm-lit -sv test/ttmlir/EmitC/TTNN |& tee logs/emitc_1.log && tools/ttnn-standalone/ci_compile_dylib.py |& tee logs/emitc_2.log && TTRT_LOGGER_LEVEL=DEBUG ttrt emitc build/test/ttmlir/EmitC/TTNN |& tee logs/emitc_3.log
     log_result $? "emitc-full-suite"
 
     # emitc pooling tests
-    rm -rf ttrt-artifacts/ && ttrt query --save-artifacts |& tee logs/artifacts.log && llvm-lit -sv test/ttmlir/EmitC/TTNN/pooling |& tee logs/emitc_pooling_1.log && tools/ttnn-standalone/ci_compile_dylib.py |& tee logs/emitc_pooling_2.log && TTRT_LOGGER_LEVEL=DEBUG ttrt run --emitc build/test/ttmlir/EmitC/TTNN/pooling |& tee logs/emitc_pooling_3.log
+    rm -rf ttrt-artifacts/ && ttrt query --save-artifacts |& tee logs/artifacts.log && llvm-lit -sv test/ttmlir/EmitC/TTNN/pooling |& tee logs/emitc_pooling_1.log && tools/ttnn-standalone/ci_compile_dylib.py |& tee logs/emitc_pooling_2.log && TTRT_LOGGER_LEVEL=DEBUG ttrt emitc build/test/ttmlir/EmitC/TTNN/pooling |& tee logs/emitc_pooling_3.log
     log_result $? "emitc-pooling"
 
     # emitc conv tests
-    rm -rf ttrt-artifacts/ && ttrt query --save-artifacts |& tee logs/artifacts.log && llvm-lit -sv test/ttmlir/EmitC/TTNN/conv |& tee logs/emitc_conv_1.log && tools/ttnn-standalone/ci_compile_dylib.py |& tee logs/emitc_conv_2.log && TTRT_LOGGER_LEVEL=DEBUG ttrt run --emitc build/test/ttmlir/EmitC/TTNN/conv |& tee logs/emitc_conv_3.log
+    rm -rf ttrt-artifacts/ && ttrt query --save-artifacts |& tee logs/artifacts.log && llvm-lit -sv test/ttmlir/EmitC/TTNN/conv |& tee logs/emitc_conv_1.log && tools/ttnn-standalone/ci_compile_dylib.py |& tee logs/emitc_conv_2.log && TTRT_LOGGER_LEVEL=DEBUG ttrt emitc build/test/ttmlir/EmitC/TTNN/conv |& tee logs/emitc_conv_3.log
     log_result $? "emitc-conv"
 
     # emitc convert ttir to c++ and run
