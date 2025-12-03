@@ -24,6 +24,8 @@
 
     rm -rf ttrt-artifacts
     ttrt query --save-artifacts |& tee logs/artifacts.log; log_result $? "ttrt-query" $UP_SKIP
+    # Use --disable-eth-dispatch for p150 (blackhole) but not n150 (wormhole)
+    # ttrt query --save-artifacts --disable-eth-dispatch |& tee logs/artifacts.log; log_result $? "ttrt-query" $UP_SKIP
     export SYSTEM_DESC_PATH=`pwd`/ttrt-artifacts/system_desc.ttsys
 }
 
@@ -50,9 +52,15 @@ log_result $? "check-ttmlir" $UP_BAD
     }
     { # op model conversion
         cmake --build ./build --target TestConversion |& tee logs/lit_opmodelconv.log
-        log_result $? "TestConversion-build"
+        log_result $? "TestOpModelConversion-build"
         ./build/test/unittests/OpModel/TTNN/Conversion/TestConversion |& tee logs/opmodelconv.log
-        log_result $? "TestConversion-test"
+        log_result $? "TestOpModelConversion-test"
+    }
+    { # op model model tests
+        rm -rf ttrt-artifacts
+        ttrt query --save-artifacts |& tee logs/artifacts.log; log_result $? "ttrt-query" $UP_SKIP
+        llvm-lit -v --param TTMLIR_ENABLE_OPTIMIZER_MODELS_PERF_TESTS=1 ./build/test/ttmlir/Silicon/TTNN/n150/optimizer/models_perf_tests |& tee logs/opmodel_modeltests.log
+        log_result $? "opmodel-modeltests"
     }
 }
 
