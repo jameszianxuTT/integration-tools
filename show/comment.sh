@@ -4,6 +4,8 @@
 source "$(dirname "$0")/git_common.sh"
 init
 
+OUTPUT_FILE="$LOGS_DIR/uc.md"
+
 # Set commit range
 if [ $# -eq 0 ]; then
     main_metal=$(get_metal_commit "main")
@@ -26,16 +28,11 @@ commits_str="\`\`\`j
 $commits_output
 \`\`\`"
 
-ci_str="
-FE CI runs:
-- [x] tt-torch CI
-- [x] tt-forge-fe CI
-- [x] tt-xla CI"
 
 # Generate formatted comment using conditional wrapping
 if [ "$count" -gt 30 ]; then
     # Wrap with <details> tag for multiple commits
-    cat > "$LOGS_DIR/uc.md" << EOF
+    cat > "$OUTPUT_FILE" << EOF
 $count_str
 <details><summary> Click to expand commits ◀ </summary>
 
@@ -43,11 +40,11 @@ $commits_str
 
 </details>
 
-$ci_str
 EOF
 else
     # Simple format for no commits
-    echo "$count_str" > "$LOGS_DIR/uc.md"
-    echo "$commits_str" >> "$LOGS_DIR/uc.md"
-    echo "$ci_str" >> "$LOGS_DIR/uc.md"
+    echo "$count_str" > "$OUTPUT_FILE"
+    echo "$commits_str" >> "$OUTPUT_FILE"
 fi
+
+echo "Comment generated and saved to $OUTPUT_FILE"

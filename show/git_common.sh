@@ -1,13 +1,34 @@
 #!/bin/bash
 
 # Common git operations for uplift scripts
-TT_MLIR_DIR="/Users/achoudhury/code/tt-mlir"
-TT_METAL_DIR="/Users/achoudhury/code/tt-metal"
+REPO_PATH="/tmp/up"
+TT_MLIR_DIR="$REPO_PATH/tt-mlir"
+TT_METAL_DIR="$REPO_PATH/tt-metal"
+TT_MLIR_URL="https://github.com/tenstorrent/tt-mlir.git"
+TT_METAL_URL="https://github.com/tenstorrent/tt-metal.git"
 LOGS_DIR="$(dirname "$0")/../scratch"
 
 init() {
     mkdir -p $LOGS_DIR
+    ensure_repos
     fetch_branches
+}
+
+# Clone repos if they don't exist or have incorrect remote
+ensure_repos() {
+    mkdir -p $REPO_PATH
+    ensure_repo "$TT_MLIR_DIR" "$TT_MLIR_URL"
+    ensure_repo "$TT_METAL_DIR" "$TT_METAL_URL"
+}
+
+ensure_repo() {
+    local repo_dir="$1"
+    local repo_url="$2"
+    
+    if ! current_remote=$(git -C "$repo_dir" remote get-url origin 2>/dev/null) || [ "$current_remote" != "$repo_url" ]; then
+        rm -rf "$repo_dir"
+        git clone "$repo_url" "$repo_dir"
+    fi
 }
 
 # Fetch latest branches
